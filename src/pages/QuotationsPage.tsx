@@ -199,14 +199,14 @@ const QuotationsPage: React.FC = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => setViewQuotation(q)}>
+                        <Button variant="ghost" size="icon" className="action-btn" onClick={() => setViewQuotation(q)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setEditQuotation({ ...q })}>
+                        <Button variant="ghost" size="icon" className="action-btn" onClick={() => setEditQuotation({ ...q })}>
                           <Edit className="w-4 h-4" />
                         </Button>
                         {canDeleteQuotation(crmUser.role) && (
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(q.id)}>
+                          <Button variant="ghost" size="icon" className="action-btn action-btn-danger" onClick={() => handleDelete(q.id)}>
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         )}

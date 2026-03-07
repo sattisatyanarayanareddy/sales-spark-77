@@ -50,7 +50,7 @@ npm install
 ```
 
 3. Set up environment variables:
-Create a `.env.local` file in the root directory with:
+Create a `.env` file in the root directory with:
 ```env
 VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com

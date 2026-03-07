@@ -91,8 +91,8 @@ const AppLayout: React.FC = () => {
         </nav>
 
         <div className="p-4 border-t border-sidebar-border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-full bg-sidebar-accent flex items-center justify-center text-sm font-semibold">
+          <div className="profile-highlight flex items-center gap-3 mb-3">
+            <div className="profile-avatar w-9 h-9 flex items-center justify-center text-sm font-semibold">
               {crmUser.name.split(" ").map((n) => n[0]).join("")}
             </div>
             <div className="flex-1 min-w-0">
@@ -105,7 +105,7 @@ const AppLayout: React.FC = () => {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
+            className="w-full justify-start text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/80"
             onClick={logout}
           >
             <LogOut className="w-4 h-4 mr-2" />
@@ -115,8 +115,8 @@ const AppLayout: React.FC = () => {
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 flex items-center border-b border-border bg-card px-4 md:px-6 sticky top-0 z-30">
+      <div className="flex-1 flex flex-col min-w-0 app-main-surface">
+        <header className="h-14 flex items-center border-b border-border app-main-header px-4 md:px-6 sticky top-0 z-30">
           <Button
             variant="ghost"
             size="icon"

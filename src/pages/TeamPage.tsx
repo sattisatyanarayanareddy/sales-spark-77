@@ -303,10 +303,10 @@ const TeamPage: React.FC = () => {
                     <TableCell className="text-right font-medium">${(stats?.totalSalesValue ?? 0).toLocaleString()}</TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex items-center gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEditUser(user)}>
+                        <Button variant="ghost" size="icon" className="action-btn" onClick={() => openEditUser(user)}>
                           <Pencil className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user)}>
+                        <Button variant="ghost" size="icon" className="action-btn action-btn-danger" onClick={() => handleDeleteUser(user)}>
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
                       </div>

@@ -1,20 +1,20 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "./components/ui/toaster";
+import { Toaster as Sonner } from "./components/ui/sonner";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { isFirebaseConfigured } from "@/lib/firebase";
-import AppLayout from "@/components/AppLayout";
-import ProtectedRoute from "@/components/ProtectedRoute";
-import LoginPage from "@/pages/LoginPage";
-import SetupPage from "@/pages/SetupPage";
-import DashboardPage from "@/pages/DashboardPage";
-import QuotationsPage from "@/pages/QuotationsPage";
-import CreateQuotationPage from "@/pages/CreateQuotationPage";
-import TeamPage from "@/pages/TeamPage";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { isFirebaseConfigured } from "./lib/firebase";
+import AppLayout from "./components/AppLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import LoginPage from "./pages/LoginPage";
+import SetupPage from "./pages/SetupPage";
+import DashboardPage from "./pages/DashboardPage";
+import QuotationsPage from "./pages/QuotationsPage";
+import CreateQuotationPage from "./pages/CreateQuotationPage";
+import TeamPage from "./pages/TeamPage";
 import NotFound from "./pages/NotFound";
-import { QUOTATION_CREATE_ALLOWED_ROLES, TEAM_ALLOWED_ROLES } from "@/lib/access-control";
+import { QUOTATION_CREATE_ALLOWED_ROLES, TEAM_ALLOWED_ROLES } from "./lib/access-control";
 
 const queryClient = new QueryClient();
 
