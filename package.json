@@ -48,9 +48,12 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
+<<<<<<< HEAD
     "firebase": "^12.10.0",
     "framer-motion": "^12.35.0",
     "html2canvas": "^1.4.1",
+=======
+>>>>>>> 41d405ebc931326484da3fcbe7269efc6ab1a670
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.462.0",
