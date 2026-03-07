@@ -4,8 +4,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import AppLayout from "@/components/AppLayout";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import LoginPage from "@/pages/LoginPage";
+import SetupPage from "@/pages/SetupPage";
 import DashboardPage from "@/pages/DashboardPage";
 import QuotationsPage from "@/pages/QuotationsPage";
 import CreateQuotationPage from "@/pages/CreateQuotationPage";
@@ -14,26 +17,16 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const ProtectedRoutes = () => {
-  const { crmUser, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!crmUser) return <Navigate to="/login" replace />;
-
-  return (
-    <AppLayout />
-  );
-};
-
 const AppRoutes = () => {
   const { crmUser, loading } = useAuth();
+
+  if (!isFirebaseConfigured) {
+    return (
+      <Routes>
+        <Route path="*" element={<SetupPage />} />
+      </Routes>
+    );
+  }
 
   if (loading) {
     return (
@@ -46,13 +39,15 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/login" element={crmUser ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-      <Route path="/" element={<ProtectedRoutes />}>
+
+      <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="quotations" element={<QuotationsPage />} />
-        <Route path="quotations/new" element={<CreateQuotationPage />} />
-        <Route path="team" element={<TeamPage />} />
+        <Route path="quotations/new" element={<ProtectedRoute allowedRoles={["sales"]}><CreateQuotationPage /></ProtectedRoute>} />
+        <Route path="team" element={<ProtectedRoute allowedRoles={["general_manager", "sub_manager"]}><TeamPage /></ProtectedRoute>} />
       </Route>
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
