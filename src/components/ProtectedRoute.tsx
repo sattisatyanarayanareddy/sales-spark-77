@@ -2,6 +2,7 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { UserRole } from "@/types/crm";
+import { ROLE_HOME_ROUTE, hasRoleAccess } from "@/lib/access-control";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +12,14 @@ interface ProtectedRouteProps {
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
   const { crmUser, loading } = useAuth();
   const location = useLocation();
+
+  console.log("🛡️ ProtectedRoute check:", { 
+    loading, 
+    hasCrmUser: !!crmUser, 
+    role: crmUser?.role,
+    allowedRoles,
+    path: location.pathname 
+  });
 
   if (loading) {
     return (
@@ -24,8 +33,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(crmUser.role)) {
-    return <Navigate to="/dashboard" replace />;
+  if (!hasRoleAccess(crmUser.role, allowedRoles)) {
+    return <Navigate to={ROLE_HOME_ROUTE[crmUser.role]} replace />;
   }
 
   return <>{children}</>;

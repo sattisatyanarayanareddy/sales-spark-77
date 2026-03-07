@@ -7,13 +7,15 @@ import { Card } from "@/components/ui/card";
 import { BarChart3, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -30,6 +32,23 @@ const LoginPage: React.FC = () => {
       setError(err.message || "Login failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast.error("Enter your email first to receive a reset link");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      await resetPassword(email);
+      toast.success("Password reset email sent. Check your inbox.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send reset email");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -83,6 +102,16 @@ const LoginPage: React.FC = () => {
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in..." : "Sign In"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={handleForgotPassword}
+              disabled={resetLoading}
+            >
+              {resetLoading ? "Sending reset link..." : "Forgot password?"}
             </Button>
           </form>
         </Card>

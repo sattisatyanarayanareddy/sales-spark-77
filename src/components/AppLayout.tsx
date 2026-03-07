@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { canManageTeam } from "@/lib/access-control";
 
 const roleLabel = {
   general_manager: "General Manager",
@@ -34,7 +35,7 @@ const AppLayout: React.FC = () => {
 
   if (!crmUser) return null;
 
-  const isManager = crmUser.role === "general_manager" || crmUser.role === "sub_manager";
+  const isManager = canManageTeam(crmUser.role);
 
   const navItems = [
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },

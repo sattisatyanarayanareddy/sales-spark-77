@@ -1,73 +1,123 @@
-# Welcome to your Lovable project
+# SalesCRM - Sales Pipeline Management System
 
-## Project info
+A modern, full-featured CRM application for managing sales quotations, team members, and sales pipeline.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- 🔐 **Firebase Authentication** - Secure email/password authentication with password reset
+- 👥 **Team Management** - Role-based access control (General Manager, Sub Manager, Sales)
+- 📋 **Quotation Management** - Create, track, and export quotations with product details
+- 🖼️ **Image Storage** - Cloudinary integration for product images
+- 📄 **PDF Export** - Generate professional quotations with images and branding
+- 📊 **Dashboard Analytics** - Real-time sales metrics and performance tracking
+- 🎨 **Modern UI** - Built with Shadcn UI and Tailwind CSS
 
-There are several ways of editing your application.
+## User Roles
 
-**Use Lovable**
+- **General Manager**: Full system access, can manage all users and quotations
+- **Sub Manager**: Can add/edit/delete sales users and manage quotations
+- **Sales**: Can create and manage their own quotations
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Frontend**: React 18, TypeScript, Vite
+- **UI Framework**: Shadcn UI, Tailwind CSS
+- **Backend**: Firebase (Authentication & Firestore Database)
+- **Storage**: Cloudinary
+- **PDF Generation**: jsPDF, html2canvas
+- **Routing**: React Router v6
 
-**Use your preferred IDE**
+## Getting Started
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Prerequisites
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- Node.js (v18 or higher)
+- npm or bun package manager
+- Firebase project with Firestore enabled
+- Cloudinary account
 
-Follow these steps:
+### Installation
 
+1. Clone the repository:
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
 git clone <YOUR_GIT_URL>
+cd sales-spark-77
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+2. Install dependencies:
+```sh
+npm install
+```
 
-# Step 3: Install the necessary dependencies.
-npm i
+3. Set up environment variables:
+Create a `.env.local` file in the root directory with:
+```env
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+VITE_FIREBASE_APP_ID=your_app_id
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
+VITE_CLOUDINARY_UPLOAD_PRESET=your_upload_preset
+```
+
+4. Start the development server:
+```sh
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The application will be available at `http://localhost:8080`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Building for Production
 
-**Use GitHub Codespaces**
+```sh
+npm run build
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+The built files will be in the `dist` directory.
 
-## What technologies are used for this project?
+## Deployment
 
-This project is built with:
+### Deploy to Vercel
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+1. Install Vercel CLI:
+```sh
+npm install -g vercel
+```
 
-## How can I deploy this project?
+2. Deploy:
+```sh
+vercel
+```
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+3. Set environment variables in Vercel dashboard (Project Settings > Environment Variables)
 
-## Can I connect a custom domain to my Lovable project?
+**Note**: Vercel deployments are public by default. Anyone with the URL can access your application.
 
-Yes, you can!
+### Alternative Deployment Options
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- **Netlify**: Connect your Git repository and deploy automatically
+- **Firebase Hosting**: `firebase deploy` after configuring firebase.json
+- **AWS S3 + CloudFront**: Static hosting with CDN
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Project Structure
+
+```
+src/
+├── components/      # Reusable UI components
+├── contexts/        # React contexts (Auth, etc.)
+├── hooks/           # Custom React hooks
+├── lib/             # Utilities and services
+│   ├── firebase.ts          # Firebase config
+│   ├── firestore-service.ts # Database operations
+│   └── cloudinary.ts        # Image upload
+├── pages/           # Route pages
+├── types/           # TypeScript types
+└── main.tsx         # Application entry point
+```
+
+## License
+
+Private - All rights reserved

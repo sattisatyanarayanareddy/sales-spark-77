@@ -3,6 +3,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   User,
 } from "firebase/auth";
@@ -16,6 +17,7 @@ interface AuthContextType {
   crmUser: CRMUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   createUser: (email: string, password: string, name: string, role: UserRole, department: string, managerId: string | null) => Promise<void>;
 }
@@ -43,13 +45,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setFirebaseUser(user);
       if (user) {
         try {
+          console.log("🔍 Auth user detected:", user.uid, user.email);
           const userData = await fetchUserDoc(user.uid);
+          console.log("✅ Firestore user data:", userData);
           setCrmUser(userData);
         } catch (e) {
-          console.error("Error fetching user doc:", e);
+          console.error("❌ Error fetching user doc:", e);
           setCrmUser(null);
         }
       } else {
+        console.log("❌ No auth user");
         setCrmUser(null);
       }
       setLoading(false);
@@ -64,7 +69,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signInWithEmailAndPassword(auth, email, password);
   };
 
+  const resetPassword = async (email: string) => {
+    if (!isFirebaseConfigured) {
+      throw new Error("Firebase is not configured. Please add your Firebase config.");
+    }
+    await sendPasswordResetEmail(auth, email);
+  };
+
   const logout = async () => {
+    if (!isFirebaseConfigured) {
+      setCrmUser(null);
+      return;
+    }
     await signOut(auth);
     setCrmUser(null);
   };
@@ -83,6 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Note: Creating users from the client with createUserWithEmailAndPassword
     // will sign out the current user. For production, use Firebase Admin SDK via
     // a Cloud Function. For now this works for initial setup.
+    const currentUser = auth.currentUser;
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, "users", cred.user.uid), {
       name,
@@ -92,10 +109,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       managerId,
       createdAt: serverTimestamp(),
     });
+    // Sign back in as the original user if they were logged in
+    if (currentUser) {
+      await auth.updateCurrentUser(currentUser);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ firebaseUser, crmUser, loading, login, logout, createUser }}>
+    <AuthContext.Provider value={{ firebaseUser, crmUser, loading, login, resetPassword, logout, createUser }}>
       {children}
     </AuthContext.Provider>
   );

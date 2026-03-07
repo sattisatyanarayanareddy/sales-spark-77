@@ -5,6 +5,7 @@ import {
   updateQuotationDoc,
   deleteQuotationDoc,
   exportToCSV,
+  exportQuotationToPDF,
 } from "@/lib/firestore-service";
 import { Quotation, QuotationStage, STAGE_LABELS } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
@@ -15,10 +16,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, Download, Edit, Trash2, Eye, Loader2 } from "lucide-react";
+import { Search, Plus, Download, Edit, Trash2, Eye, Loader2, ExternalLink, ImageOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { canCreateQuotation, canDeleteQuotation } from "@/lib/access-control";
 
 const QuotationsPage: React.FC = () => {
   const { crmUser } = useAuth();
@@ -30,6 +32,7 @@ const QuotationsPage: React.FC = () => {
   const [editQuotation, setEditQuotation] = useState<Quotation | null>(null);
   const [viewQuotation, setViewQuotation] = useState<Quotation | null>(null);
   const [saving, setSaving] = useState(false);
+  const [downloadingPDF, setDownloadingPDF] = useState(false);
 
   const loadData = async () => {
     if (!crmUser) return;
@@ -108,6 +111,20 @@ const QuotationsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadPDF = async () => {
+    if (!viewQuotation) return;
+    setDownloadingPDF(true);
+    try {
+      await exportQuotationToPDF(viewQuotation);
+      toast.success("PDF downloaded successfully");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to generate PDF");
+    } finally {
+      setDownloadingPDF(false);
+    }
+  };
+
   const formatCurrency = (v: number) => `$${v.toLocaleString()}`;
 
   if (loadingData) {
@@ -139,7 +156,7 @@ const QuotationsPage: React.FC = () => {
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
-          {crmUser.role === "sales" && (
+          {canCreateQuotation(crmUser.role) && (
             <Button size="sm" onClick={() => navigate("/quotations/new")}>
               <Plus className="w-4 h-4 mr-1" /> New Quotation
             </Button>
@@ -188,7 +205,7 @@ const QuotationsPage: React.FC = () => {
                         <Button variant="ghost" size="icon" onClick={() => setEditQuotation({ ...q })}>
                           <Edit className="w-4 h-4" />
                         </Button>
-                        {(crmUser.role === "sales" || crmUser.role === "general_manager") && (
+                        {canDeleteQuotation(crmUser.role) && (
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(q.id)}>
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
@@ -226,9 +243,11 @@ const QuotationsPage: React.FC = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Image</TableHead>
                       <TableHead>Product</TableHead>
                       <TableHead>Model</TableHead>
                       <TableHead>Part No</TableHead>
+                      <TableHead>Image URL</TableHead>
                       <TableHead className="text-right">Value</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -236,17 +255,56 @@ const QuotationsPage: React.FC = () => {
                     {viewQuotation.products.map((p, i) => (
                       <TableRow key={i}>
                         <TableCell>
+                          <div className="w-20 h-20 rounded-md border border-border bg-muted/40 overflow-hidden flex items-center justify-center">
+                            {p.imageUrl ? (
+                              <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                <ImageOff className="w-4 h-4" />
+                                <span className="text-[10px] mt-1">No image</span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
                           <p className="font-medium">{p.name}</p>
                           <p className="text-xs text-muted-foreground">{p.description}</p>
                         </TableCell>
                         <TableCell className="text-sm">{p.modelNumber}</TableCell>
                         <TableCell className="text-sm">{p.partNumber}</TableCell>
+                        <TableCell className="max-w-[220px]">
+                          {p.imageUrl ? (
+                            <a
+                              href={p.imageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-primary hover:underline text-xs break-all"
+                            >
+                              Open URL <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(p.value)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
                 <p className="text-right font-bold mt-2">Total: {formatCurrency(viewQuotation.totalValue)}</p>
+              </div>
+              <div className="flex gap-2 pt-4 border-t">
+                <Button
+                  onClick={handleDownloadPDF}
+                  className="flex-1"
+                  disabled={downloadingPDF}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {downloadingPDF ? "Generating PDF..." : "Download PDF"}
+                </Button>
+                <Button variant="outline" onClick={() => setViewQuotation(null)} className="flex-1">
+                  Close
+                </Button>
               </div>
             </div>
           )}

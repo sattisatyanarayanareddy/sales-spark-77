@@ -33,6 +33,7 @@ const CreateQuotationPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([emptyProduct()]);
   const [imageFiles, setImageFiles] = useState<(File | null)[]>([null]);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState<number[]>([]);
 
   if (!crmUser) return null;
 
@@ -82,9 +83,15 @@ const CreateQuotationPage: React.FC = () => {
         products.map(async (p, i) => {
           if (imageFiles[i]) {
             try {
+              setUploadingImages((prev) => [...prev, i]);
               const url = await uploadProductImage(imageFiles[i]!, tempId);
+              setUploadingImages((prev) => prev.filter((idx) => idx !== i));
+              toast.success(`Image ${i + 1} uploaded`);
               return { ...p, imageUrl: url };
-            } catch {
+            } catch (err) {
+              console.error(err);
+              setUploadingImages((prev) => prev.filter((idx) => idx !== i));
+              toast.error(`Failed to upload image ${i + 1}`);
               return p; // Keep without image if upload fails
             }
           }
@@ -201,7 +208,12 @@ const CreateQuotationPage: React.FC = () => {
                 <div className="space-y-2">
                   <Label>Product Image</Label>
                   <div className="flex items-center gap-4">
-                    <div className="w-24 h-24 rounded-lg border-2 border-dashed border-border bg-muted/50 flex items-center justify-center overflow-hidden">
+                    <div className="w-24 h-24 rounded-lg border-2 border-dashed border-border bg-muted/50 flex items-center justify-center overflow-hidden relative">
+                      {uploadingImages.includes(i) && (
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 animate-spin text-white" />
+                        </div>
+                      )}
                       {product.imageUrl ? (
                         <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
@@ -209,9 +221,9 @@ const CreateQuotationPage: React.FC = () => {
                       )}
                     </div>
                     <label className="cursor-pointer">
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(i, e)} />
-                      <Button type="button" variant="outline" size="sm" asChild>
-                        <span>Upload Image</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(i, e)} disabled={uploadingImages.includes(i)} />
+                      <Button type="button" variant="outline" size="sm" asChild disabled={uploadingImages.includes(i)}>
+                        <span>{uploadingImages.includes(i) ? "Uploading..." : "Upload Image"}</span>
                       </Button>
                     </label>
                   </div>
