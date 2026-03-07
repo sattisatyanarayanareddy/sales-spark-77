@@ -40,33 +40,12 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/login" element={crmUser ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
 
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <AppLayout />
-          </ProtectedRoute>
-        }
-      >
+      <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="quotations" element={<QuotationsPage />} />
-        <Route
-          path="quotations/new"
-          element={
-            <ProtectedRoute allowedRoles={["sales"]}>
-              <CreateQuotationPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="team"
-          element={
-            <ProtectedRoute allowedRoles={["general_manager", "sub_manager"]}>
-              <TeamPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="quotations/new" element={<ProtectedRoute allowedRoles={["sales"]}><CreateQuotationPage /></ProtectedRoute>} />
+        <Route path="team" element={<ProtectedRoute allowedRoles={["general_manager", "sub_manager"]}><TeamPage /></ProtectedRoute>} />
       </Route>
 
       <Route path="*" element={<NotFound />} />
