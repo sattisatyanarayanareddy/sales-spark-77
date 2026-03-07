@@ -1,29 +1,68 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import StatCard from "@/components/StatCard";
 import StageBadge from "@/components/StageBadge";
-import { getDashboardStats, getTeamMembers, getQuotations, exportToCSV } from "@/lib/demo-data";
-import { Quotation } from "@/types/crm";
-import { FileText, TrendingUp, ShoppingCart, Receipt, DollarSign, Eye, Download, Search, X } from "lucide-react";
+import {
+  fetchQuotations,
+  fetchTeamUsers,
+  computeStats,
+  computeTeamMembers,
+  exportToCSV,
+} from "@/lib/firestore-service";
+import { Quotation, CRMUser } from "@/types/crm";
+import {
+  FileText, TrendingUp, ShoppingCart, Receipt, DollarSign,
+  Eye, Download, Search, Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { motion } from "framer-motion";
 
 const DashboardPage: React.FC = () => {
   const { crmUser } = useAuth();
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [teamUsers, setTeamUsers] = useState<CRMUser[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (!crmUser) return;
+    const load = async () => {
+      setLoadingData(true);
+      try {
+        const [qs, team] = await Promise.all([
+          fetchQuotations(crmUser.id, crmUser.role),
+          crmUser.role !== "sales"
+            ? fetchTeamUsers(crmUser.id, crmUser.role)
+            : Promise.resolve([]),
+        ]);
+        setQuotations(qs);
+        setTeamUsers(team);
+      } catch (e) {
+        console.error("Error loading dashboard:", e);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    load();
+  }, [crmUser]);
 
   if (!crmUser) return null;
 
   const isManager = crmUser.role === "general_manager" || crmUser.role === "sub_manager";
-  const stats = getDashboardStats(crmUser.id, crmUser.role);
-  const teamMembers = isManager ? getTeamMembers(crmUser.id, crmUser.role) : [];
-  const quotations = getQuotations(crmUser.id, crmUser.role);
+  const stats = computeStats(quotations);
+  const teamMembers = isManager ? computeTeamMembers(teamUsers, quotations) : [];
 
   const filteredQuotations = quotations.filter((q) => {
     if (selectedMember && q.salesPersonId !== selectedMember) return false;
@@ -57,9 +96,16 @@ const DashboardPage: React.FC = () => {
 
   const formatCurrency = (v: number) => `$${v.toLocaleString()}`;
 
+  if (loadingData) {
+    return (
+      <div className="page-container flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="page-container space-y-6">
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard title={isManager ? "Total Quotations" : "My Quotations"} value={stats.totalQuotations} icon={FileText} iconBg="bg-primary/10" iconColor="text-primary" />
         <StatCard title="Active Deals" value={stats.activeDeals} icon={TrendingUp} iconBg="bg-warning/10" iconColor="text-warning" />
@@ -68,7 +114,6 @@ const DashboardPage: React.FC = () => {
         <StatCard title="Total Sales" value={formatCurrency(stats.totalSalesValue)} icon={DollarSign} iconBg="bg-info/10" iconColor="text-info" />
       </div>
 
-      {/* Team Table (Managers only) */}
       {isManager && teamMembers.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="stat-card p-0 overflow-hidden">
           <div className="p-4 md:p-6 border-b border-border">
@@ -109,26 +154,16 @@ const DashboardPage: React.FC = () => {
         </motion.div>
       )}
 
-      {/* Quotations / Sales Funnel */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="stat-card p-0 overflow-hidden">
         <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center gap-3">
-          <h3 className="section-title text-lg flex-1">
-            {isManager ? "Sales Funnel" : "My Quotations"}
-          </h3>
+          <h3 className="section-title text-lg flex-1">{isManager ? "Sales Funnel" : "My Quotations"}</h3>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 w-48"
-              />
+              <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-48" />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
+              <SelectTrigger className="w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="quotation_created">Quotation Created</SelectItem>
@@ -164,19 +199,15 @@ const DashboardPage: React.FC = () => {
             <TableBody>
               {filteredQuotations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    No quotations found
-                  </TableCell>
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No quotations found</TableCell>
                 </TableRow>
               ) : (
                 filteredQuotations.map((q) => (
                   <TableRow key={q.id}>
                     <TableCell className="font-mono text-xs">{q.quotationNumber}</TableCell>
                     <TableCell>
-                      <div>
-                        <p className="font-medium text-sm">{q.customerName}</p>
-                        <p className="text-xs text-muted-foreground">{q.companyName}</p>
-                      </div>
+                      <p className="font-medium text-sm">{q.customerName}</p>
+                      <p className="text-xs text-muted-foreground">{q.companyName}</p>
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate text-sm">{q.subject}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(q.totalValue)}</TableCell>
@@ -195,7 +226,6 @@ const DashboardPage: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Member Detail Dialog */}
       <Dialog open={!!selectedMember} onOpenChange={() => setSelectedMember(null)}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>

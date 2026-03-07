@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { createQuotation } from "@/lib/demo-data";
+import { createQuotationDoc, uploadProductImage } from "@/lib/firestore-service";
 import { Product } from "@/types/crm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Plus, Trash2, ImagePlus } from "lucide-react";
+import { Plus, Trash2, ImagePlus, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -31,6 +31,8 @@ const CreateQuotationPage: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState("");
   const [subject, setSubject] = useState("");
   const [products, setProducts] = useState<Product[]>([emptyProduct()]);
+  const [imageFiles, setImageFiles] = useState<(File | null)[]>([null]);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!crmUser) return null;
 
@@ -47,37 +49,76 @@ const CreateQuotationPage: React.FC = () => {
     if (file) {
       const url = URL.createObjectURL(file);
       updateProduct(index, "imageUrl", url);
+      const updatedFiles = [...imageFiles];
+      updatedFiles[index] = file;
+      setImageFiles(updatedFiles);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const addProduct = () => {
+    setProducts([...products, emptyProduct()]);
+    setImageFiles([...imageFiles, null]);
+  };
+
+  const removeProduct = (index: number) => {
+    setProducts(products.filter((_, i) => i !== index));
+    setImageFiles(imageFiles.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName || !companyName || !subject || products.some((p) => !p.name || !p.value)) {
       toast.error("Please fill in all required fields");
       return;
     }
 
-    createQuotation({
-      customerName,
-      companyName,
-      customerEmail,
-      customerPhone,
-      subject,
-      salesPersonId: crmUser.id,
-      salesPersonName: crmUser.name,
-      managerId: crmUser.managerId || "",
-      products,
-      totalValue,
-      stage: "quotation_created",
-      poNumber: "",
-      invoiceValue: 0,
-      followUpDate: null,
-      followUpNotes: "",
-      deliveryStatus: "",
-    });
+    setSubmitting(true);
+    try {
+      // Create quotation first to get ID for image uploads
+      const tempId = `temp-${Date.now()}`;
 
-    toast.success("Quotation created successfully!");
-    navigate("/quotations");
+      // Upload images if any
+      const productsWithImages = await Promise.all(
+        products.map(async (p, i) => {
+          if (imageFiles[i]) {
+            try {
+              const url = await uploadProductImage(imageFiles[i]!, tempId);
+              return { ...p, imageUrl: url };
+            } catch {
+              return p; // Keep without image if upload fails
+            }
+          }
+          return p;
+        })
+      );
+
+      await createQuotationDoc({
+        customerName,
+        companyName,
+        customerEmail,
+        customerPhone,
+        subject,
+        salesPersonId: crmUser.id,
+        salesPersonName: crmUser.name,
+        managerId: crmUser.managerId || "",
+        products: productsWithImages,
+        totalValue,
+        stage: "quotation_created",
+        poNumber: "",
+        invoiceValue: 0,
+        followUpDate: null,
+        followUpNotes: "",
+        deliveryStatus: "",
+      });
+
+      toast.success("Quotation created successfully!");
+      navigate("/quotations");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to create quotation");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -85,7 +126,6 @@ const CreateQuotationPage: React.FC = () => {
       <h2 className="section-title mb-6">Create New Quotation</h2>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Customer Details */}
         <Card className="p-6">
           <h3 className="font-display font-semibold mb-4">Customer Details</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -112,11 +152,10 @@ const CreateQuotationPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Products */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-display font-semibold">Products</h3>
-            <Button type="button" variant="outline" size="sm" onClick={() => setProducts([...products, emptyProduct()])}>
+            <Button type="button" variant="outline" size="sm" onClick={addProduct}>
               <Plus className="w-4 h-4 mr-1" /> Add Product
             </Button>
           </div>
@@ -132,12 +171,11 @@ const CreateQuotationPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-muted-foreground">Product {i + 1}</span>
                   {products.length > 1 && (
-                    <Button type="button" variant="ghost" size="icon" onClick={() => setProducts(products.filter((_, idx) => idx !== i))}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeProduct(i)}>
                       <Trash2 className="w-4 h-4 text-destructive" />
                     </Button>
                   )}
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Product Name *</Label>
@@ -160,8 +198,6 @@ const CreateQuotationPage: React.FC = () => {
                   <Label>Description</Label>
                   <Textarea value={product.description} onChange={(e) => updateProduct(i, "description", e.target.value)} rows={2} />
                 </div>
-
-                {/* Image upload */}
                 <div className="space-y-2">
                   <Label>Product Image</Label>
                   <div className="flex items-center gap-4">
@@ -185,12 +221,10 @@ const CreateQuotationPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Summary */}
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Created by: <span className="font-medium text-foreground">{crmUser.name}</span></p>
-              <p className="text-sm text-muted-foreground">Manager: <span className="font-medium text-foreground">{crmUser.managerId || "N/A"}</span></p>
             </div>
             <div className="text-right">
               <p className="text-sm text-muted-foreground">Total Value</p>
@@ -203,8 +237,8 @@ const CreateQuotationPage: React.FC = () => {
           <Button type="button" variant="outline" onClick={() => navigate("/quotations")} className="flex-1">
             Cancel
           </Button>
-          <Button type="submit" className="flex-1">
-            Create Quotation
+          <Button type="submit" className="flex-1" disabled={submitting}>
+            {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating...</> : "Create Quotation"}
           </Button>
         </div>
       </form>

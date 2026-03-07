@@ -1,6 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { getQuotations, updateQuotation, deleteQuotation, exportToCSV } from "@/lib/demo-data";
+import {
+  fetchQuotations,
+  updateQuotationDoc,
+  deleteQuotationDoc,
+  exportToCSV,
+} from "@/lib/firestore-service";
 import { Quotation, QuotationStage, STAGE_LABELS } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, Download, Edit, Trash2, Eye } from "lucide-react";
+import { Search, Plus, Download, Edit, Trash2, Eye, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -18,15 +23,33 @@ import { motion } from "framer-motion";
 const QuotationsPage: React.FC = () => {
   const { crmUser } = useAuth();
   const navigate = useNavigate();
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [editQuotation, setEditQuotation] = useState<Quotation | null>(null);
   const [viewQuotation, setViewQuotation] = useState<Quotation | null>(null);
-  const [, setRefresh] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  const loadData = async () => {
+    if (!crmUser) return;
+    setLoadingData(true);
+    try {
+      const qs = await fetchQuotations(crmUser.id, crmUser.role);
+      setQuotations(qs);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load quotations");
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [crmUser]);
 
   if (!crmUser) return null;
-
-  const quotations = getQuotations(crmUser.id, crmUser.role);
 
   const filtered = quotations.filter((q) => {
     if (statusFilter !== "all" && q.stage !== statusFilter) return false;
@@ -42,23 +65,36 @@ const QuotationsPage: React.FC = () => {
     return true;
   });
 
-  const handleDelete = (id: string) => {
-    if (deleteQuotation(id)) {
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteQuotationDoc(id);
       toast.success("Quotation deleted");
-      setRefresh((r) => r + 1);
+      loadData();
+    } catch (e) {
+      toast.error("Failed to delete");
     }
   };
 
-  const handleUpdateStatus = (q: Quotation) => {
-    setEditQuotation({ ...q });
-  };
-
-  const saveUpdate = () => {
+  const saveUpdate = async () => {
     if (!editQuotation) return;
-    updateQuotation(editQuotation.id, editQuotation);
-    toast.success("Quotation updated");
-    setEditQuotation(null);
-    setRefresh((r) => r + 1);
+    setSaving(true);
+    try {
+      await updateQuotationDoc(editQuotation.id, {
+        stage: editQuotation.stage,
+        poNumber: editQuotation.poNumber,
+        invoiceValue: editQuotation.invoiceValue,
+        followUpDate: editQuotation.followUpDate,
+        followUpNotes: editQuotation.followUpNotes,
+        deliveryStatus: editQuotation.deliveryStatus,
+      });
+      toast.success("Quotation updated");
+      setEditQuotation(null);
+      loadData();
+    } catch (e) {
+      toast.error("Failed to update");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleExport = () => {
@@ -74,6 +110,14 @@ const QuotationsPage: React.FC = () => {
 
   const formatCurrency = (v: number) => `$${v.toLocaleString()}`;
 
+  if (loadingData) {
+    return (
+      <div className="page-container flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="page-container space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -84,9 +128,7 @@ const QuotationsPage: React.FC = () => {
             <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-48" />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
+            <SelectTrigger className="w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
               {Object.entries(STAGE_LABELS).map(([k, v]) => (
@@ -143,7 +185,7 @@ const QuotationsPage: React.FC = () => {
                         <Button variant="ghost" size="icon" onClick={() => setViewQuotation(q)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleUpdateStatus(q)}>
+                        <Button variant="ghost" size="icon" onClick={() => setEditQuotation({ ...q })}>
                           <Edit className="w-4 h-4" />
                         </Button>
                         {(crmUser.role === "sales" || crmUser.role === "general_manager") && (
@@ -221,10 +263,7 @@ const QuotationsPage: React.FC = () => {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Stage</Label>
-                <Select
-                  value={editQuotation.stage}
-                  onValueChange={(v) => setEditQuotation({ ...editQuotation, stage: v as QuotationStage })}
-                >
+                <Select value={editQuotation.stage} onValueChange={(v) => setEditQuotation({ ...editQuotation, stage: v as QuotationStage })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(STAGE_LABELS).map(([k, v]) => (
@@ -253,7 +292,9 @@ const QuotationsPage: React.FC = () => {
                 <Label>Delivery Status</Label>
                 <Input value={editQuotation.deliveryStatus} onChange={(e) => setEditQuotation({ ...editQuotation, deliveryStatus: e.target.value })} />
               </div>
-              <Button onClick={saveUpdate} className="w-full">Save Changes</Button>
+              <Button onClick={saveUpdate} className="w-full" disabled={saving}>
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
             </div>
           )}
         </DialogContent>

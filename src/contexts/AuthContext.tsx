@@ -1,8 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
-import { CRMUser } from "@/types/crm";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  User,
+} from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db, isFirebaseConfigured } from "@/lib/firebase";
+import { fetchUserDoc } from "@/lib/firestore-service";
+import { CRMUser, UserRole } from "@/types/crm";
 
 interface AuthContextType {
   firebaseUser: User | null;
@@ -10,6 +17,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  createUser: (email: string, password: string, name: string, role: UserRole, department: string, managerId: string | null) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -20,50 +28,13 @@ export const useAuth = () => {
   return ctx;
 };
 
-// Demo users for when Firebase isn't configured
-const DEMO_USERS: Record<string, CRMUser> = {
-  "gm@demo.com": {
-    id: "gm-001",
-    name: "Sarah Johnson",
-    email: "gm@demo.com",
-    role: "general_manager",
-    department: "Management",
-    managerId: null,
-    createdAt: new Date().toISOString(),
-  },
-  "sm@demo.com": {
-    id: "sm-001",
-    name: "Mike Chen",
-    email: "sm@demo.com",
-    role: "sub_manager",
-    department: "Sales East",
-    managerId: "gm-001",
-    createdAt: new Date().toISOString(),
-  },
-  "sp@demo.com": {
-    id: "sp-001",
-    name: "Alex Rivera",
-    email: "sp@demo.com",
-    role: "sales",
-    department: "Sales East",
-    managerId: "sm-001",
-    createdAt: new Date().toISOString(),
-  },
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [crmUser, setCrmUser] = useState<CRMUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const isDemoMode = !import.meta.env.VITE_FIREBASE_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY === "demo-api-key";
 
   useEffect(() => {
-    if (isDemoMode) {
-      // Check localStorage for demo session
-      const demoEmail = localStorage.getItem("demo_user_email");
-      if (demoEmail && DEMO_USERS[demoEmail]) {
-        setCrmUser(DEMO_USERS[demoEmail]);
-      }
+    if (!isFirebaseConfigured) {
       setLoading(false);
       return;
     }
@@ -72,12 +43,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setFirebaseUser(user);
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          if (userDoc.exists()) {
-            setCrmUser({ id: user.uid, ...userDoc.data() } as CRMUser);
-          }
+          const userData = await fetchUserDoc(user.uid);
+          setCrmUser(userData);
         } catch (e) {
           console.error("Error fetching user doc:", e);
+          setCrmUser(null);
         }
       } else {
         setCrmUser(null);
@@ -85,33 +55,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
     return unsub;
-  }, [isDemoMode]);
+  }, []);
 
   const login = async (email: string, password: string) => {
-    if (isDemoMode) {
-      const user = DEMO_USERS[email];
-      if (user) {
-        setCrmUser(user);
-        localStorage.setItem("demo_user_email", email);
-        return;
-      }
-      throw new Error("Invalid demo credentials. Use gm@demo.com, sm@demo.com, or sp@demo.com");
+    if (!isFirebaseConfigured) {
+      throw new Error("Firebase is not configured. Please add your Firebase config.");
     }
     await signInWithEmailAndPassword(auth, email, password);
   };
 
   const logout = async () => {
-    if (isDemoMode) {
-      setCrmUser(null);
-      localStorage.removeItem("demo_user_email");
-      return;
-    }
     await signOut(auth);
     setCrmUser(null);
   };
 
+  const createUser = async (
+    email: string,
+    password: string,
+    name: string,
+    role: UserRole,
+    department: string,
+    managerId: string | null
+  ) => {
+    if (!isFirebaseConfigured) {
+      throw new Error("Firebase is not configured.");
+    }
+    // Note: Creating users from the client with createUserWithEmailAndPassword
+    // will sign out the current user. For production, use Firebase Admin SDK via
+    // a Cloud Function. For now this works for initial setup.
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, "users", cred.user.uid), {
+      name,
+      email,
+      role,
+      department,
+      managerId,
+      createdAt: serverTimestamp(),
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ firebaseUser, crmUser, loading, login, logout }}>
+    <AuthContext.Provider value={{ firebaseUser, crmUser, loading, login, logout, createUser }}>
       {children}
     </AuthContext.Provider>
   );
