@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
-import { CRMUser, Quotation, QuotationStage, DashboardStats, TeamMember, Product, UserRole } from "@/types/crm";
+import { CRMUser, Quotation, QuotationStage, DashboardStats, TeamMember, Product, Customer, UserRole } from "@/types/crm";
 
 // ── Helpers ──
 
@@ -221,6 +221,117 @@ export async function updateQuotationDoc(
 
 export async function deleteQuotationDoc(id: string): Promise<void> {
   await deleteDoc(doc(db, "quotations", id));
+}
+
+// ── Customers ──
+
+export async function fetchCustomers(userId: string, role: string): Promise<Customer[]> {
+  try {
+    const q = query(collection(db, "customers"), where("createdBy", "==", userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as Customer[];
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    return [];
+  }
+}
+
+export async function createCustomer(data: {
+  name: string;
+  companyName: string;
+  email: string;
+  phone: string;
+  createdBy: string;
+  userEmail: string;
+}): Promise<string> {
+  try {
+    const docRef = await addDoc(collection(db, "customers"), {
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating customer:", error);
+    throw error;
+  }
+}
+
+export async function deleteCustomer(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "customers", id));
+  } catch (error) {
+    console.error("Error deleting customer:", error);
+    throw error;
+  }
+}
+
+// ── Products (Items) ──
+
+export async function fetchProducts(userId: string, role: string): Promise<Product[]> {
+  try {
+    const q = query(collection(db, "items"), where("createdBy", "==", userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as Product[];
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    return [];
+  }
+}
+
+export async function createProduct(data: {
+  name: string;
+  description: string;
+  modelNumber: string;
+  partNumber: string;
+  value: number;
+  quantity: number;
+  imageFile?: File;
+  createdBy: string;
+  userEmail: string;
+}): Promise<string> {
+  try {
+    // Upload image to Cloudinary if provided
+    let imageUrl = "";
+    if (data.imageFile) {
+      // Create folder structure: items/{userEmail}
+      const folder = `items/${data.userEmail.replace('@', '_').replace('.', '_')}`;
+      imageUrl = await uploadImageToCloudinary(data.imageFile, folder);
+    }
+
+    const docRef = await addDoc(collection(db, "items"), {
+      name: data.name,
+      description: data.description,
+      modelNumber: data.modelNumber,
+      partNumber: data.partNumber,
+      value: data.value,
+      quantity: data.quantity,
+      imageUrl: imageUrl,
+      createdBy: data.createdBy,
+      userEmail: data.userEmail,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating product:", error);
+    throw error;
+  }
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "items", id));
+  } catch (error) {
+    console.error("Error deleting product:", error);
+    throw error;
+  }
 }
 
 // ── Storage (Cloudinary) ──

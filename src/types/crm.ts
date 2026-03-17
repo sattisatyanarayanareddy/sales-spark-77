@@ -20,13 +20,27 @@ export type QuotationStage =
   | "closed_won"
   | "closed_lost";
 
+export interface Customer {
+  id: string;
+  name: string;
+  companyName: string;
+  email: string;
+  phone: string;
+  createdBy: string;
+  userEmail: string;
+}
+
 export interface Product {
+  id: string;
   name: string;
   description: string;
   modelNumber: string;
   partNumber: string;
   value: number;
+  quantity?: number;
   imageUrl: string;
+  createdBy: string;
+  userEmail: string;
 }
 
 export interface Quotation {

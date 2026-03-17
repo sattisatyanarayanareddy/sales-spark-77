@@ -40,6 +40,8 @@ const AppLayout: React.FC = () => {
   const navItems = [
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { to: "/quotations", icon: FileText, label: "Quotations" },
+    { to: "/customers", icon: Users, label: "Customers" },
+    { to: "/items", icon: BarChart3, label: "Items" },
     ...(isManager ? [{ to: "/team", icon: Users, label: "Team" }] : []),
   ];
 
