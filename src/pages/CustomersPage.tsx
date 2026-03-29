@@ -24,6 +24,7 @@ const CustomersPage = () => {
     companyName: "",
     email: "",
     phone: "",
+    department: "",
   });
 
   const loadCustomers = async () => {
@@ -45,7 +46,10 @@ const CustomersPage = () => {
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!crmUser || !formData.name || !formData.email) return;
+    if (!crmUser || !formData.name || !formData.companyName || !formData.email || !formData.phone) {
+      toast.error("Name, Company Name, Email, and Phone are required");
+      return;
+    }
 
     try {
       await createCustomer({
@@ -53,6 +57,7 @@ const CustomersPage = () => {
         companyName: formData.companyName,
         email: formData.email,
         phone: formData.phone,
+        department: formData.department,
         createdBy: crmUser.id,
         userEmail: crmUser.email,
       });
@@ -62,6 +67,7 @@ const CustomersPage = () => {
         companyName: "",
         email: "",
         phone: "",
+        department: "",
       });
       setOpen(false);
       await loadCustomers();
@@ -118,9 +124,10 @@ const CustomersPage = () => {
                 />
               </div>
               <div>
-                <Label htmlFor="company">Company Name</Label>
+                <Label htmlFor="company">Company Name *</Label>
                 <Input
                   id="company"
+                  required
                   value={formData.companyName}
                   onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
                   placeholder="Enter company name"
@@ -138,12 +145,22 @@ const CustomersPage = () => {
                 />
               </div>
               <div>
-                <Label htmlFor="phone">Phone</Label>
+                <Label htmlFor="phone">Phone *</Label>
                 <Input
                   id="phone"
+                  required
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="Enter phone number"
+                />
+              </div>
+              <div>
+                <Label htmlFor="department">Department</Label>
+                <Input
+                  id="department"
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  placeholder="Enter department"
                 />
               </div>
               <Button type="submit" className="w-full">
@@ -168,6 +185,7 @@ const CustomersPage = () => {
                   <th className="text-left py-3 px-4 font-medium">Company</th>
                   <th className="text-left py-3 px-4 font-medium">Email</th>
                   <th className="text-left py-3 px-4 font-medium">Phone</th>
+                  <th className="text-left py-3 px-4 font-medium">Department</th>
                   <th className="text-right py-3 px-4 font-medium">Actions</th>
                 </tr>
               </thead>
@@ -178,6 +196,7 @@ const CustomersPage = () => {
                     <td className="py-3 px-4">{customer.companyName || "—"}</td>
                     <td className="py-3 px-4 text-blue-600">{customer.email}</td>
                     <td className="py-3 px-4">{customer.phone || "—"}</td>
+                    <td className="py-3 px-4">{customer.department || "—"}</td>
                     <td className="py-3 px-4 text-right space-x-2">
                       <Button
                         variant="ghost"

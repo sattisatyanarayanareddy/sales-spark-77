@@ -8,17 +8,13 @@ export interface CRMUser {
   department: string;
   managerId: string | null;
   createdAt: string;
+  profilePicture?: string;
+  phone?: string;
+  address?: string;
+  updatedAt?: string;
 }
 
-export type QuotationStage =
-  | "quotation_created"
-  | "follow_up"
-  | "po_received"
-  | "invoice_sent"
-  | "partial_payment"
-  | "payment_received"
-  | "closed_won"
-  | "closed_lost";
+export type QuotationStatus = "Draft" | "Created" | "Sent" | "Won";
 
 export interface Customer {
   id: string;
@@ -26,21 +22,33 @@ export interface Customer {
   companyName: string;
   email: string;
   phone: string;
+  department: string;
   createdBy: string;
   userEmail: string;
 }
 
 export interface Product {
   id: string;
+  type: "Goods" | "Service";
   name: string;
+  sku: string;
+  unit: "box" | "cm" | "dz" | "ft" | "g" | "in" | "kg" | "km" | "lb" | "mg" | "ml" | "m" | "pcs" | "roll" | "pack" | "pack of 50" | "pack of 100" | "pack of 500";
   description: string;
-  modelNumber: string;
-  partNumber: string;
-  value: number;
+  salesDescription?: string;
+  purchaseDescription?: string;
+  modelNumber?: string;
+  partNumber?: string;
+  value: number; // selling price
+  costPrice: number;
   quantity?: number;
   imageUrl: string;
+  isSellable: boolean;
+  saleAccount: string;
+  purchaseAccount: string;
   createdBy: string;
   userEmail: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Quotation {
@@ -56,12 +64,13 @@ export interface Quotation {
   managerId: string;
   products: Product[];
   totalValue: number;
-  stage: QuotationStage;
+  status: QuotationStatus;
   poNumber: string;
+  poValue: number;
   invoiceValue: number;
   followUpDate: string | null;
   followUpNotes: string;
-  deliveryStatus: string;
+  deliveryStatus: "Pending" | "Partial Delivery" | "Delivered";
   createdAt: string;
   updatedAt: string;
 }
@@ -84,24 +93,60 @@ export interface TeamMember {
   totalSalesValue: number;
 }
 
-export const STAGE_LABELS: Record<QuotationStage, string> = {
-  quotation_created: "Quotation Created",
-  follow_up: "Follow Up",
-  po_received: "PO Received",
-  invoice_sent: "Invoice Sent",
-  partial_payment: "Partial Payment",
-  payment_received: "Payment Received",
-  closed_won: "Closed Won",
-  closed_lost: "Closed Lost",
+export const STATUS_LABELS: Record<QuotationStatus, string> = {
+  Draft: "Draft",
+  Created: "Created",
+  Sent: "Sent",
 };
 
-export const STAGE_COLORS: Record<QuotationStage, string> = {
-  quotation_created: "bg-primary/10 text-primary",
-  follow_up: "bg-warning/10 text-warning",
-  po_received: "bg-info/10 text-info",
-  invoice_sent: "bg-secondary text-secondary-foreground",
-  partial_payment: "bg-warning/10 text-warning",
-  payment_received: "bg-success/10 text-success",
-  closed_won: "bg-success/10 text-success",
-  closed_lost: "bg-destructive/10 text-destructive",
+export type SalesFunnelStatus =
+  | "Hot"
+  | "Warm"
+  | "Cold"
+  | "Closed"
+  | "Cancelled"
+  | "Lost"
+  | "Won";
+
+export interface SalesFunnel {
+  id: string;
+  quotationId: string;
+  quotationNumber: string;
+  companyName: string;
+  subject: string;
+  quotationValue: number;
+  followUpDate: string | null;
+  status: SalesFunnelStatus;
+  poValue: number;
+  deliveryStatus: "Pending" | "Partial Delivery" | "Delivered";
+  invoiceValue: number;
+  salesPersonId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const STATUS_COLORS: Record<QuotationStatus, string> = {
+  Draft: "bg-gray-500/10 text-gray-500",
+  Created: "bg-primary/10 text-primary",
+  Sent: "bg-blue-500/10 text-blue-500",
+};
+
+export const SALES_FUNNEL_STATUS_LABELS: Record<SalesFunnelStatus, string> = {
+  Hot: "Hot",
+  Warm: "Warm",
+  Cold: "Cold",
+  Closed: "Closed",
+  Cancelled: "Cancelled",
+  Lost: "Lost",
+  Won: "Won",
+};
+
+export const SALES_FUNNEL_STATUS_COLORS: Record<SalesFunnelStatus, string> = {
+  Hot: "bg-red-500/10 text-red-500",
+  Warm: "bg-orange-500/10 text-orange-500",
+  Cold: "bg-gray-500/10 text-gray-500",
+  Closed: "bg-green-500/10 text-green-500",
+  Cancelled: "bg-yellow-500/10 text-yellow-500",
+  Lost: "bg-red-600/10 text-red-600",
+  Won: "bg-green-600/10 text-green-600",
 };

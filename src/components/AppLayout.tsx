@@ -1,15 +1,17 @@
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { NavLink } from "@/components/NavLink";
-import { useLocation, Outlet } from "react-router-dom";
+import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import {
   LayoutDashboard,
-  FileText,
   Users,
   LogOut,
   BarChart3,
   Menu,
   X,
+  TrendingUp,
+  UserCircle,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +32,7 @@ const roleBadgeClass = {
 
 const AppLayout: React.FC = () => {
   const { crmUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
@@ -39,9 +42,10 @@ const AppLayout: React.FC = () => {
 
   const navItems = [
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/quotations", icon: FileText, label: "Quotations" },
     { to: "/customers", icon: Users, label: "Customers" },
     { to: "/items", icon: BarChart3, label: "Items" },
+    { to: "/quotations", icon: FileText, label: "Quotations" },
+    { to: "/sales-funnel", icon: TrendingUp, label: "Sales Funnel" },
     ...(isManager ? [{ to: "/team", icon: Users, label: "Team" }] : []),
   ];
 
@@ -92,13 +96,29 @@ const AppLayout: React.FC = () => {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border">
-          <div className="profile-highlight flex items-center gap-3 mb-3">
-            <div className="profile-avatar w-9 h-9 flex items-center justify-center text-sm font-semibold">
-              {crmUser.name.split(" ").map((n) => n[0]).join("")}
+        <div className="p-4 border-t border-sidebar-border space-y-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent/80 px-3 py-2"
+            onClick={() => {
+              navigate("/profile");
+              setMobileOpen(false);
+            }}
+          >
+            <UserCircle className="w-4 h-4 mr-2" />
+            Profile
+          </Button>
+          <div className="profile-highlight flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-sidebar-accent/50 transition-colors" onClick={() => { navigate("/profile"); setMobileOpen(false); }}>
+            <div className="profile-avatar w-8 h-8 flex items-center justify-center text-xs font-semibold bg-sidebar-primary text-sidebar-primary-foreground rounded-full">
+              {crmUser.profilePicture ? (
+                <img src={crmUser.profilePicture} alt={crmUser.name} className="w-full h-full rounded-full object-cover" />
+              ) : (
+                crmUser.name.split(" ").map((n) => n[0]).join("")
+              )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{crmUser.name}</p>
+              <p className="text-xs font-medium truncate">{crmUser.name}</p>
               <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${roleBadgeClass[crmUser.role]}`}>
                 {roleLabel[crmUser.role]}
               </Badge>

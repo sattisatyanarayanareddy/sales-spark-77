@@ -6,8 +6,10 @@ import {
   deleteQuotationDoc,
   exportToCSV,
   exportQuotationToPDF,
+  createSalesFunnelDoc,
+  fetchSalesFunnelByQuotationId,
 } from "@/lib/firestore-service";
-import { Quotation, QuotationStage, STAGE_LABELS } from "@/types/crm";
+import { Quotation, QuotationStatus, STATUS_LABELS } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +57,7 @@ const QuotationsPage: React.FC = () => {
   if (!crmUser) return null;
 
   const filtered = quotations.filter((q) => {
-    if (statusFilter !== "all" && q.stage !== statusFilter) return false;
+    if (statusFilter !== "all" && q.status !== statusFilter) return false;
     if (searchQuery) {
       const s = searchQuery.toLowerCase();
       return (
@@ -83,13 +85,35 @@ const QuotationsPage: React.FC = () => {
     setSaving(true);
     try {
       await updateQuotationDoc(editQuotation.id, {
-        stage: editQuotation.stage,
+        status: editQuotation.status,
         poNumber: editQuotation.poNumber,
+        poValue: editQuotation.poValue,
         invoiceValue: editQuotation.invoiceValue,
         followUpDate: editQuotation.followUpDate,
         followUpNotes: editQuotation.followUpNotes,
         deliveryStatus: editQuotation.deliveryStatus,
       });
+
+      // If status is Sent, link to sales funnel (no duplicate)
+      if (editQuotation.status === "Sent") {
+        const existingFunnel = await fetchSalesFunnelByQuotationId(editQuotation.id);
+        if (!existingFunnel) {
+          await createSalesFunnelDoc({
+            quotationId: editQuotation.id,
+            quotationNumber: editQuotation.quotationNumber,
+            companyName: editQuotation.companyName,
+            subject: editQuotation.subject,
+            quotationValue: editQuotation.totalValue,
+            followUpDate: editQuotation.followUpDate,
+            status: "Hot", // Default initial funnel status
+            poValue: editQuotation.poValue || 0,
+            deliveryStatus: editQuotation.deliveryStatus || "Pending",
+            invoiceValue: editQuotation.invoiceValue || 0,
+            salesPersonId: editQuotation.salesPersonId,
+          });
+        }
+      }
+
       toast.success("Quotation updated");
       setEditQuotation(null);
       loadData();
@@ -148,7 +172,7 @@ const QuotationsPage: React.FC = () => {
             <SelectTrigger className="w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              {Object.entries(STAGE_LABELS).map(([k, v]) => (
+              {Object.entries(STATUS_LABELS).map(([k, v]) => (
                 <SelectItem key={k} value={k}>{v}</SelectItem>
               ))}
             </SelectContent>
@@ -174,14 +198,13 @@ const QuotationsPage: React.FC = () => {
                 <TableHead>Subject</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Follow-up</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No quotations found</TableCell>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No quotations found</TableCell>
                 </TableRow>
               ) : (
                 filtered.map((q) => (
@@ -193,10 +216,7 @@ const QuotationsPage: React.FC = () => {
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate text-sm">{q.subject}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(q.totalValue)}</TableCell>
-                    <TableCell><StageBadge stage={q.stage} /></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {q.followUpDate ? new Date(q.followUpDate).toLocaleDateString() : "—"}
-                    </TableCell>
+                    <TableCell><StageBadge stage={q.status} /></TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" className="action-btn" onClick={() => setViewQuotation(q)}>
@@ -234,7 +254,7 @@ const QuotationsPage: React.FC = () => {
                 <div><span className="text-muted-foreground">Email:</span> {viewQuotation.customerEmail}</div>
                 <div><span className="text-muted-foreground">Phone:</span> {viewQuotation.customerPhone}</div>
                 <div><span className="text-muted-foreground">Subject:</span> {viewQuotation.subject}</div>
-                <div><span className="text-muted-foreground">Status:</span> <StageBadge stage={viewQuotation.stage} /></div>
+                <div><span className="text-muted-foreground">Status:</span> <StageBadge stage={viewQuotation.status} /></div>
                 <div><span className="text-muted-foreground">PO Number:</span> {viewQuotation.poNumber || "—"}</div>
                 <div><span className="text-muted-foreground">Invoice:</span> {viewQuotation.invoiceValue ? formatCurrency(viewQuotation.invoiceValue) : "—"}</div>
               </div>
@@ -320,35 +340,15 @@ const QuotationsPage: React.FC = () => {
           {editQuotation && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Stage</Label>
-                <Select value={editQuotation.stage} onValueChange={(v) => setEditQuotation({ ...editQuotation, stage: v as QuotationStage })}>
+                <Label>Status</Label>
+                <Select value={editQuotation.status} onValueChange={(v) => setEditQuotation({ ...editQuotation, status: v as QuotationStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STAGE_LABELS).map(([k, v]) => (
+                    {Object.entries(STATUS_LABELS).map(([k, v]) => (
                       <SelectItem key={k} value={k}>{v}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>PO Number</Label>
-                <Input value={editQuotation.poNumber} onChange={(e) => setEditQuotation({ ...editQuotation, poNumber: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Invoice Value</Label>
-                <Input type="number" value={editQuotation.invoiceValue} onChange={(e) => setEditQuotation({ ...editQuotation, invoiceValue: Number(e.target.value) })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Follow-up Date</Label>
-                <Input type="date" value={editQuotation.followUpDate || ""} onChange={(e) => setEditQuotation({ ...editQuotation, followUpDate: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Follow-up Notes</Label>
-                <Textarea value={editQuotation.followUpNotes} onChange={(e) => setEditQuotation({ ...editQuotation, followUpNotes: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Delivery Status</Label>
-                <Input value={editQuotation.deliveryStatus} onChange={(e) => setEditQuotation({ ...editQuotation, deliveryStatus: e.target.value })} />
               </div>
               <Button onClick={saveUpdate} className="w-full" disabled={saving}>
                 {saving ? "Saving..." : "Save Changes"}

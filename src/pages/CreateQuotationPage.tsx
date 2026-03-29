@@ -150,7 +150,7 @@ const CreateQuotationPage: React.FC = () => {
           totalValue: item.product.value * item.quantity
         })),
         totalValue,
-        stage: "quotation_created",
+        status: "Created",
         poNumber: "",
         invoiceValue: 0,
         followUpDate: null,

@@ -15,6 +15,8 @@ import CreateQuotationPage from "./pages/CreateQuotationPage";
 import CustomersPage from "./pages/CustomersPage";
 import ItemsPage from "./pages/ItemsPage";
 import TeamPage from "./pages/TeamPage";
+import SalesFunnelPage from "./pages/SalesFunnelPage";
+import SalesPersonProfilePage from "./pages/SalesPersonProfilePage";
 import NotFound from "./pages/NotFound";
 import { QUOTATION_CREATE_ALLOWED_ROLES, TEAM_ALLOWED_ROLES } from "./lib/access-control";
 
@@ -48,9 +50,11 @@ const AppRoutes = () => {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="quotations" element={<QuotationsPage />} />
         <Route path="quotations/new" element={<ProtectedRoute allowedRoles={QUOTATION_CREATE_ALLOWED_ROLES}><CreateQuotationPage /></ProtectedRoute>} />
+        <Route path="sales-funnel" element={<SalesFunnelPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="items" element={<ItemsPage />} />
         <Route path="team" element={<ProtectedRoute allowedRoles={TEAM_ALLOWED_ROLES}><TeamPage /></ProtectedRoute>} />
+        <Route path="profile" element={<SalesPersonProfilePage />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

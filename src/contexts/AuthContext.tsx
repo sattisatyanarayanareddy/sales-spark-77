@@ -15,6 +15,7 @@ import { CRMUser, UserRole } from "@/types/crm";
 interface AuthContextType {
   firebaseUser: User | null;
   crmUser: CRMUser | null;
+  setCrmUser: (user: CRMUser | null) => void;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -116,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ firebaseUser, crmUser, loading, login, resetPassword, logout, createUser }}>
+    <AuthContext.Provider value={{ firebaseUser, crmUser, setCrmUser, loading, login, resetPassword, logout, createUser }}>
       {children}
     </AuthContext.Provider>
   );

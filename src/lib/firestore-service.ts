@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
-import { CRMUser, Quotation, QuotationStage, DashboardStats, TeamMember, Product, Customer, UserRole } from "@/types/crm";
+import { CRMUser, Quotation, QuotationStatus, DashboardStats, TeamMember, Product, Customer, UserRole, SalesFunnel, SalesFunnelStatus } from "@/types/crm";
 
 // ── Helpers ──
 
@@ -24,6 +24,37 @@ const toDate = (val: any): string => {
   if (typeof val === "string") return val;
   return new Date(val).toISOString();
 };
+
+function mapOldStageToStatus(oldStage: string): QuotationStatus {
+  const stageMap: Record<string, QuotationStatus> = {
+    quotation_created: "Created",
+    follow_up: "Sent",
+    po_received: "Sent",
+    invoice_sent: "Sent",
+    partial_payment: "Sent",
+    payment_received: "Sent",
+    closed_won: "Won",
+    closed_lost: "Sent",
+  };
+  return stageMap[oldStage] || "Draft";
+}
+
+const mapSalesFunnel = (id: string, data: any): SalesFunnel => ({
+  id,
+  quotationId: data.quotationId || "",
+  quotationNumber: data.quotationNumber || "",
+  companyName: data.companyName || "",
+  subject: data.subject || "",
+  quotationValue: data.quotationValue || 0,
+  followUpDate: data.followUpDate || null,
+  status: data.status || "Hot",
+  poValue: data.poValue || 0,
+  deliveryStatus: data.deliveryStatus || "Pending",
+  invoiceValue: data.invoiceValue || 0,
+  salesPersonId: data.salesPersonId || "",
+  createdAt: toDate(data.createdAt),
+  updatedAt: toDate(data.updatedAt),
+});
 
 const mapQuotation = (id: string, data: any): Quotation => ({
   id,
@@ -38,12 +69,13 @@ const mapQuotation = (id: string, data: any): Quotation => ({
   managerId: data.managerId || "",
   products: data.products || [],
   totalValue: data.totalValue || 0,
-  stage: data.stage || "quotation_created",
+  status: data.status || (data.stage ? mapOldStageToStatus(data.stage) : "Draft"),
   poNumber: data.poNumber || "",
+  poValue: data.poValue || 0,
   invoiceValue: data.invoiceValue || 0,
   followUpDate: data.followUpDate || null,
   followUpNotes: data.followUpNotes || "",
-  deliveryStatus: data.deliveryStatus || "",
+  deliveryStatus: data.deliveryStatus || "Pending",
   createdAt: toDate(data.createdAt),
   updatedAt: toDate(data.updatedAt),
 });
@@ -57,7 +89,7 @@ export async function fetchUserDoc(uid: string): Promise<CRMUser | null> {
   if (!snap.exists()) return null;
   const d = snap.data();
   console.log("📦 Raw Firestore data:", d);
-  const user = {
+  const user: CRMUser = {
     id: uid,
     name: d.name || "",
     email: d.email || "",
@@ -65,6 +97,10 @@ export async function fetchUserDoc(uid: string): Promise<CRMUser | null> {
     department: d.department || "",
     managerId: (d.managerId && d.managerId !== "null") ? d.managerId : null,
     createdAt: toDate(d.createdAt),
+    phone: d.phone || "",
+    address: d.address || "",
+    profilePicture: d.profilePicture || undefined,
+    updatedAt: toDate(d.updatedAt),
   };
   console.log("✨ Parsed user object:", user);
   return user;
@@ -72,12 +108,22 @@ export async function fetchUserDoc(uid: string): Promise<CRMUser | null> {
 
 export async function fetchAllUsers(): Promise<CRMUser[]> {
   const snap = await getDocs(collection(db, "users"));
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-    managerId: (d.data().managerId && d.data().managerId !== "null") ? d.data().managerId : null,
-    createdAt: toDate(d.data().createdAt),
-  })) as CRMUser[];
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: data.name || "",
+      email: data.email || "",
+      role: data.role || "sales",
+      department: data.department || "",
+      managerId: (data.managerId && data.managerId !== "null") ? data.managerId : null,
+      createdAt: toDate(data.createdAt),
+      phone: data.phone || "",
+      address: data.address || "",
+      profilePicture: data.profilePicture || undefined,
+      updatedAt: toDate(data.updatedAt),
+    } as CRMUser;
+  });
 }
 
 export async function fetchTeamUsers(managerId: string, role: string): Promise<CRMUser[]> {
@@ -219,6 +265,59 @@ export async function updateQuotationDoc(
   });
 }
 
+// ── Sales Funnel ──
+
+export async function fetchSalesFunnel(userId: string, role: UserRole): Promise<SalesFunnel[]> {
+  // Load everything and apply permissions filtering in client side to avoid composite index requirement
+  const snap = await getDocs(query(collection(db, "salesFunnel")));
+  const allFunnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
+
+  if (role === "general_manager") {
+    return allFunnels.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  const teamIds = role === "sub_manager" ? [userId, ...((await fetchTeamUsers(userId, role)).map((t) => t.id))] : [userId];
+
+  return allFunnels
+    .filter((f) => {
+      // include fallback records created before salesPersonId existed
+      return !f.salesPersonId || teamIds.includes(f.salesPersonId);
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function fetchSalesFunnelByQuotationId(quotationId: string): Promise<SalesFunnel | null> {
+  const q = query(collection(db, "salesFunnel"), where("quotationId", "==", quotationId));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const docData = snap.docs[0];
+  return mapSalesFunnel(docData.id, docData.data());
+}
+
+export async function createSalesFunnelDoc(data: Omit<SalesFunnel, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  const docRef = await addDoc(collection(db, "salesFunnel"), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateSalesFunnelDoc(
+  id: string,
+  updates: Partial<SalesFunnel>
+): Promise<void> {
+  const { id: _id, createdAt: _ca, ...rest } = updates as any;
+  await updateDoc(doc(db, "salesFunnel", id), {
+    ...rest,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteSalesFunnelDoc(id: string): Promise<void> {
+  await deleteDoc(doc(db, "salesFunnel", id));
+}
+
 export async function deleteQuotationDoc(id: string): Promise<void> {
   await deleteDoc(doc(db, "quotations", id));
 }
@@ -286,12 +385,39 @@ export async function fetchProducts(userId: string, role: string): Promise<Produ
 }
 
 export async function createProduct(data: {
+  type: "Goods" | "Service";
   name: string;
+  sku: string;
+  unit:
+    | "box"
+    | "cm"
+    | "dz"
+    | "ft"
+    | "g"
+    | "in"
+    | "kg"
+    | "km"
+    | "lb"
+    | "mg"
+    | "ml"
+    | "m"
+    | "pcs"
+    | "roll"
+    | "pack"
+    | "pack of 50"
+    | "pack of 100"
+    | "pack of 500";
   description: string;
-  modelNumber: string;
-  partNumber: string;
+  salesDescription?: string;
+  purchaseDescription?: string;
+  modelNumber?: string;
+  partNumber?: string;
   value: number;
+  costPrice: number;
   quantity: number;
+  isSellable: boolean;
+  saleAccount: string;
+  purchaseAccount: string;
   imageFile?: File;
   createdBy: string;
   userEmail: string;
@@ -306,12 +432,21 @@ export async function createProduct(data: {
     }
 
     const docRef = await addDoc(collection(db, "items"), {
+      type: data.type,
       name: data.name,
+      sku: data.sku,
+      unit: data.unit,
       description: data.description,
-      modelNumber: data.modelNumber,
-      partNumber: data.partNumber,
+      salesDescription: data.salesDescription || "",
+      purchaseDescription: data.purchaseDescription || "",
+      modelNumber: data.modelNumber || "",
+      partNumber: data.partNumber || "",
       value: data.value,
+      costPrice: data.costPrice,
       quantity: data.quantity,
+      isSellable: data.isSellable,
+      saleAccount: data.saleAccount,
+      purchaseAccount: data.purchaseAccount,
       imageUrl: imageUrl,
       createdBy: data.createdBy,
       userEmail: data.userEmail,
@@ -354,7 +489,7 @@ export async function uploadProductImage(file: File, quotationId: string): Promi
 export function computeStats(quotations: Quotation[]): DashboardStats {
   return {
     totalQuotations: quotations.length,
-    activeDeals: quotations.filter((q) => !["closed_won", "closed_lost"].includes(q.stage)).length,
+    activeDeals: quotations.filter((q) => !["Won", "Closed", "Cancelled", "Lost"].includes(q.status)).length,
     poGenerated: quotations.filter((q) => !!q.poNumber).length,
     invoicesCreated: quotations.filter((q) => q.invoiceValue > 0).length,
     totalSalesValue: quotations.reduce((sum, q) => sum + q.totalValue, 0),
@@ -368,7 +503,7 @@ export function computeTeamMembers(users: CRMUser[], quotations: Quotation[]): T
       id: u.id,
       name: u.name,
       department: u.department,
-      activeDeals: uq.filter((q) => !["closed_won", "closed_lost"].includes(q.stage)).length,
+      activeDeals: uq.filter((q) => !["Won", "Closed", "Cancelled", "Lost"].includes(q.status)).length,
       poGenerated: uq.filter((q) => !!q.poNumber).length,
       invoiceGenerated: uq.filter((q) => q.invoiceValue > 0).length,
       totalSalesValue: uq.reduce((s, q) => s + q.totalValue, 0),
@@ -381,11 +516,11 @@ export function computeTeamMembers(users: CRMUser[], quotations: Quotation[]): T
 export function exportToCSV(data: Quotation[]): string {
   const headers = [
     "Quotation No", "Customer", "Company", "Subject", "Value",
-    "Stage", "PO Number", "Invoice Value", "Sales Person", "Created",
+    "Status", "PO Number", "PO Value", "Invoice Value", "Sales Person", "Created",
   ];
   const rows = data.map((q) => [
     q.quotationNumber, q.customerName, q.companyName, q.subject,
-    q.totalValue.toString(), q.stage, q.poNumber, q.invoiceValue.toString(),
+    q.totalValue.toString(), q.status, q.poNumber, q.poValue.toString(), q.invoiceValue.toString(),
     q.salesPersonName, q.createdAt ? new Date(q.createdAt).toLocaleDateString() : "",
   ]);
   return [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
@@ -552,4 +687,28 @@ export async function exportQuotationToPDF(quotation: Quotation): Promise<void> 
   } finally {
     document.body.removeChild(container);
   }
+}
+
+// ── User Profile ──
+
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<CRMUser>
+): Promise<void> {
+  const { id: _id, createdAt: _ca, ...rest } = updates as any;
+  await updateDoc(doc(db, "users", userId), {
+    ...rest,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function uploadProfilePicture(userId: string, base64Data: string): Promise<string> {
+  // Store profile picture as a data URL in Firestore
+  // In production, you might want to use Cloud Storage instead
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, {
+    profilePicture: base64Data,
+    updatedAt: serverTimestamp(),
+  });
+  return base64Data;
 }

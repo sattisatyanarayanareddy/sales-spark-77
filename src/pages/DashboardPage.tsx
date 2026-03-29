@@ -1,41 +1,41 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import StatCard from "../components/StatCard";
-import { fetchQuotations } from "../lib/firestore-service";
-import { Quotation } from "../types/crm";
+import { fetchSalesFunnel } from "../lib/firestore-service";
+import { SalesFunnel } from "../types/crm";
 import { FileText, TrendingUp, Clock, CheckCircle2 } from "lucide-react";
 
 const DashboardPage = () => {
   const { crmUser } = useAuth();
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [funnels, setFunnels] = useState<SalesFunnel[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadQuotations = async () => {
+    const loadFunnels = async () => {
       if (!crmUser) return;
       
       try {
         setLoading(true);
-        const data = await fetchQuotations(crmUser.id, crmUser.role);
-        setQuotations(data);
+        const data = await fetchSalesFunnel(crmUser.id, crmUser.role);
+        setFunnels(data);
       } catch (error) {
-        console.error("Error fetching quotations:", error);
+        console.error("Error fetching sales funnel:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    loadQuotations();
+    loadFunnels();
   }, [crmUser]);
 
-  const totalQuotations = quotations.length;
-  const pendingQuotations = quotations.filter(q => 
-    q.stage === "quotation_created" || q.stage === "follow_up"
-  ).length;
-  const wonQuotations = quotations.filter(q => q.stage === "closed_won").length;
-  const totalValue = quotations
-    .filter(q => q.stage === "closed_won")
-    .reduce((sum, q) => sum + (q.totalValue || 0), 0);
+  const quotationValue = funnels.reduce((sum, f) => sum + (f.quotationValue || 0), 0);
+  const poValue = funnels
+    .filter(f => f.poValue && f.poValue > 0)
+    .reduce((sum, f) => sum + (f.poValue || 0), 0);
+  const invoiceValue = funnels
+    .filter(f => f.invoiceValue && f.invoiceValue > 0)
+    .reduce((sum, f) => sum + (f.invoiceValue || 0), 0);
+  const wonDeals = funnels.filter(f => f.status === "Won").length;
 
   if (loading) {
     return (
@@ -55,63 +55,60 @@ const DashboardPage = () => {
           </p>
         </div>
         <div className="text-sm text-muted-foreground">
-          Updated live from your quotations data
+          Updated live from your sales data
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Quotations"
-          value={totalQuotations.toString()}
+          title="Quotation Value"
+          value={`$${quotationValue.toLocaleString()}`}
           icon={FileText}
-          description="All time quotations"
+          description="Total quotation value"
         />
         <StatCard
-          title="Pending"
-          value={pendingQuotations.toString()}
-          icon={Clock}
-          description="Awaiting response"
-          trend="neutral"
+          title="PO Value"
+          value={`$${poValue.toLocaleString()}`}
+          icon={TrendingUp}
+          description="Purchase orders value"
+        />
+        <StatCard
+          title="Invoice Value"
+          value={`$${invoiceValue.toLocaleString()}`}
+          icon={CheckCircle2}
+          description="Invoices generated"
         />
         <StatCard
           title="Won Deals"
-          value={wonQuotations.toString()}
-          icon={CheckCircle2}
+          value={wonDeals.toString()}
+          icon={Clock}
           description="Successful conversions"
-          trend="up"
-        />
-        <StatCard
-          title="Total Value"
-          value={`$${totalValue.toLocaleString()}`}
-          icon={TrendingUp}
-          description="Won deals value"
-          trend="up"
         />
       </div>
 
       <div className="dashboard-panel">
         <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
-        {quotations.length === 0 ? (
+        {funnels.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">
-            No quotations yet. Create your first quotation to get started!
+            No sales funnel entries yet. Send quotations to start tracking deals!
           </p>
         ) : (
           <div className="space-y-3">
-            {quotations.slice(0, 5).map((quotation) => (
+            {funnels.slice(0, 5).map((funnel) => (
               <div
-                key={quotation.id}
+                key={funnel.id}
                 className="flex items-center justify-between p-3 rounded-lg border border-border/40 hover:bg-accent/40 transition-colors"
               >
                 <div className="flex-1">
-                  <p className="font-medium">{quotation.customerName}</p>
+                  <p className="font-medium">{funnel.companyName}</p>
                   <p className="text-sm text-muted-foreground">
-                    Quotation #{quotation.quotationNumber}
+                    Quotation #{funnel.quotationNumber}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold">${quotation.totalValue.toLocaleString()}</p>
+                  <p className="font-semibold">${funnel.quotationValue.toLocaleString()}</p>
                   <p className="text-sm text-muted-foreground capitalize">
-                    {quotation.stage.replace(/_/g, ' ')}
+                    {funnel.status}
                   </p>
                 </div>
               </div>
