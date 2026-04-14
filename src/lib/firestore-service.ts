@@ -128,7 +128,7 @@ export async function fetchAllUsers(): Promise<CRMUser[]> {
 
 export async function fetchTeamUsers(managerId: string, role: string): Promise<CRMUser[]> {
   const allUsers = await fetchAllUsers();
-  if (role === "general_manager") return allUsers.filter((u) => u.id !== managerId);
+  if (role === "general_manager" || role === "administrator") return allUsers.filter((u) => u.id !== managerId);
   return allUsers.filter((u) => u.managerId === managerId);
 }
 

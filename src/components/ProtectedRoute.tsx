@@ -7,10 +7,11 @@ import { ROLE_HOME_ROUTE, hasRoleAccess } from "@/lib/access-control";
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: UserRole[];
+  allowMissingCrmUser?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
-  const { crmUser, loading } = useAuth();
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, allowMissingCrmUser = false }) => {
+  const { firebaseUser, crmUser, loading } = useAuth();
   const location = useLocation();
 
   console.log("🛡️ ProtectedRoute check:", { 
@@ -29,11 +30,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
     );
   }
 
-  if (!crmUser) {
+  if (!firebaseUser) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (!hasRoleAccess(crmUser.role, allowedRoles)) {
+  if (!crmUser && !allowMissingCrmUser) {
+    return <Navigate to="/profile-setup" replace />;
+  }
+
+  if (crmUser && !hasRoleAccess(crmUser.role, allowedRoles)) {
     return <Navigate to={ROLE_HOME_ROUTE[crmUser.role]} replace />;
   }
 

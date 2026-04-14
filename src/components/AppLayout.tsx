@@ -19,12 +19,14 @@ import { useState } from "react";
 import { canManageTeam } from "@/lib/access-control";
 
 const roleLabel = {
+  administrator: "Administrator",
   general_manager: "General Manager",
   sub_manager: "Sub Manager",
   sales: "Sales Person",
 };
 
 const roleBadgeClass = {
+  administrator: "bg-purple-100 text-purple-700 border-purple-200",
   general_manager: "bg-success/10 text-success border-success/20",
   sub_manager: "bg-info/10 text-info border-info/20",
   sales: "bg-warning/10 text-warning border-warning/20",
@@ -40,14 +42,19 @@ const AppLayout: React.FC = () => {
 
   const isManager = canManageTeam(crmUser.role);
 
-  const navItems = [
-    { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/customers", icon: Users, label: "Customers" },
-    { to: "/items", icon: BarChart3, label: "Items" },
-    { to: "/quotations", icon: FileText, label: "Quotations" },
-    { to: "/sales-funnel", icon: TrendingUp, label: "Sales Funnel" },
-    ...(isManager ? [{ to: "/team", icon: Users, label: "Team" }] : []),
-  ];
+  const navItems = crmUser.role === "administrator"
+    ? [
+        { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+        { to: "/team", icon: Users, label: "Users" },
+      ]
+    : [
+        { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+        { to: "/customers", icon: Users, label: "Customers" },
+        { to: "/items", icon: BarChart3, label: "Items" },
+        { to: "/quotations", icon: FileText, label: "Quotations" },
+        { to: "/sales-funnel", icon: TrendingUp, label: "Sales Funnel" },
+        ...(isManager ? [{ to: "/team", icon: Users, label: "Team" }] : []),
+      ];
 
   return (
     <div className="min-h-screen flex w-full">

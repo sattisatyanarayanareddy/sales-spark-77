@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchTeamUsers, fetchQuotations, computeTeamMembers, updateUserDoc, deleteUserDoc } from "@/lib/firestore-service";
+import { fetchTeamUsers, updateUserDoc, deleteUserDoc } from "@/lib/firestore-service";
 import { CRMUser, UserRole } from "@/types/crm";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -27,21 +27,24 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 const roleBadge: Record<string, string> = {
+  administrator: "bg-purple-100 text-purple-700",
   general_manager: "bg-success/10 text-success",
   sub_manager: "bg-info/10 text-info",
   sales: "bg-warning/10 text-warning",
 };
 
 const roleLabel: Record<string, string> = {
+  administrator: "Administrator",
   general_manager: "General Manager",
   sub_manager: "Sub Manager",
   sales: "Sales Person",
 };
 
 const TeamPage: React.FC = () => {
-  const { crmUser, createUser } = useAuth();
+  const { crmUser, createUser, resetPassword } = useAuth();
   const [teamUsers, setTeamUsers] = useState<CRMUser[]>([]);
-  const [teamStats, setTeamStats] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [userCount, setUserCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -53,18 +56,17 @@ const TeamPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("sales");
   const [department, setDepartment] = useState("");
-  const [defaultPassword] = useState("Welcome@123");
+  const defaultPassword = "Welcome@123";
+  const [password, setPassword] = useState(defaultPassword);
 
   const loadData = async () => {
     if (!crmUser) return;
     setLoading(true);
     try {
-      const [users, quotations] = await Promise.all([
-        fetchTeamUsers(crmUser.id, crmUser.role),
-        fetchQuotations(crmUser.id, crmUser.role),
-      ]);
+      const users = await fetchTeamUsers(crmUser.id, crmUser.role);
       setTeamUsers(users);
-      setTeamStats(computeTeamMembers(users, quotations));
+      const totalUsers = crmUser.role === "general_manager" || crmUser.role === "administrator" ? users.length + 1 : users.length;
+      setUserCount(totalUsers);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load team data");
@@ -79,28 +81,34 @@ const TeamPage: React.FC = () => {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !role || !department) {
+    if (!name || !email || !role || !department || !password) {
       toast.error("Please fill all fields");
+      return;
+    }
+
+    if (crmUser.role !== "general_manager" && crmUser.role !== "administrator" && role === "general_manager") {
+      toast.error("Only General Manager or Administrator can assign the General Manager role");
       return;
     }
 
     setSubmitting(true);
     try {
-      const managerId = crmUser!.id;
+      const managerId = role === "general_manager" || role === "administrator" ? null : crmUser!.id;
       await createUser(
         email,
-        defaultPassword,
+        password,
         name,
         role,
         department,
         managerId
       );
-      toast.success(`Team member added! Default password: ${defaultPassword}`);
+      toast.success(`Team member added! Temporary password: ${password}`);
       setShowAddDialog(false);
       setName("");
       setEmail("");
       setRole("sales");
       setDepartment("");
+      setPassword(defaultPassword);
       await loadData();
     } catch (err: any) {
       console.error(err);
@@ -109,6 +117,19 @@ const TeamPage: React.FC = () => {
       setSubmitting(false);
     }
   };
+
+  const pageTitle = crmUser?.role === "administrator" ? "Users" : "Team Management";
+  const addButtonLabel = crmUser?.role === "administrator" ? "Add User" : "Add Team Member";
+  const addDialogTitle = crmUser?.role === "administrator" ? "Add User" : "Add Team Member";
+  const addDialogDescription = crmUser?.role === "administrator"
+    ? "Create a new user and set the initial password here. They can still reset it later via \"Forgot password\"."
+    : "Create a new team member with a password. They can reset it later via \"Forgot password\".";
+
+  const filteredUsers = teamUsers.filter((user) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [user.name, user.email, user.department, roleLabel[user.role]].join(" ").toLowerCase().includes(query);
+  });
 
   const openEditUser = (user: CRMUser) => {
     setEditingUser(user);
@@ -126,8 +147,8 @@ const TeamPage: React.FC = () => {
       return;
     }
 
-    if (crmUser.role !== "general_manager" && role === "general_manager") {
-      toast.error("Sub manager cannot assign General Manager role");
+    if (crmUser.role !== "general_manager" && crmUser.role !== "administrator" && role === "general_manager") {
+      toast.error("Only General Manager or Administrator can assign the General Manager role");
       return;
     }
 
@@ -146,6 +167,19 @@ const TeamPage: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to update user");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendResetLink = async (email: string) => {
+    setSubmitting(true);
+    try {
+      await resetPassword(email);
+      toast.success(`Reset password link sent to ${email}`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to send reset link");
     } finally {
       setSubmitting(false);
     }
@@ -183,21 +217,19 @@ const TeamPage: React.FC = () => {
   return (
     <div className="page-container space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="section-title">Team Management</h2>
-        {(crmUser.role === "general_manager" || crmUser.role === "sub_manager") && (
+        <h2 className="section-title">{pageTitle}</h2>
+        {(crmUser.role === "general_manager" || crmUser.role === "sub_manager" || crmUser.role === "administrator") && (
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                Add Team Member
+                {addButtonLabel}
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="w-full max-w-md sm:max-w-md max-h-[85vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Add Team Member</DialogTitle>
-                <DialogDescription>
-                  Create a new team member. Default password: <strong>{defaultPassword}</strong>. They can reset it via "Forgot password" on login.
-                </DialogDescription>
+                <DialogTitle>{addDialogTitle}</DialogTitle>
+                <DialogDescription>{addDialogDescription}</DialogDescription>
               </DialogHeader>
 
               <form onSubmit={handleAddMember} className="space-y-4 mt-4">
@@ -225,6 +257,21 @@ const TeamPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Set a password for the user"
+                    required
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Admin can set the initial password here. If left blank, the default temporary password will be used.
+                </p>
+
+                <div className="space-y-2">
                   <Label htmlFor="role">Role *</Label>
                   <Select value={role} onValueChange={(val) => setRole(val as UserRole)}>
                     <SelectTrigger id="role">
@@ -233,8 +280,11 @@ const TeamPage: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="sales">Sales Person</SelectItem>
                       <SelectItem value="sub_manager">Sub Manager</SelectItem>
-                      {crmUser.role === "general_manager" && (
+                      {crmUser.role !== "sales" && (
                         <SelectItem value="general_manager">General Manager</SelectItem>
+                      )}
+                      {crmUser.role === "administrator" && (
+                        <SelectItem value="administrator">Administrator</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
@@ -272,6 +322,34 @@ const TeamPage: React.FC = () => {
         )}
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Total users</p>
+          <p className="text-3xl font-semibold">{userCount}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Admin controls</p>
+          <p className="text-sm">
+            {crmUser.role === "general_manager"
+              ? "Create any user and send reset links when needed."
+              : "Manage your team and send password reset links to team members."}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Search users</p>
+          <Input
+            type="search"
+            placeholder="Search by name, email, role, department"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="max-w-md"
+          />
+        </div>
+      </div>
+
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="stat-card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
@@ -281,42 +359,38 @@ const TeamPage: React.FC = () => {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead className="text-right">Active Deals</TableHead>
-                <TableHead className="text-right">Sales Value</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {teamUsers.map((user) => {
-                const stats = teamStats.find((t: any) => t.id === user.id);
-                return (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`border-0 ${roleBadge[user.role]}`}>
-                        {roleLabel[user.role]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{user.department}</TableCell>
-                    <TableCell className="text-right">{stats?.activeDeals ?? 0}</TableCell>
-                    <TableCell className="text-right font-medium">${(stats?.totalSalesValue ?? 0).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="inline-flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="action-btn" onClick={() => openEditUser(user)}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="action-btn action-btn-danger" onClick={() => handleDeleteUser(user)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {teamUsers.length === 0 && (
+              {filteredUsers.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`border-0 ${roleBadge[user.role]}`}>
+                      {roleLabel[user.role]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{user.department}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="inline-flex items-center gap-1">
+                      <Button variant="ghost" size="icon" className="action-btn" onClick={() => handleSendResetLink(user.email)}>
+                        <AlertCircle className="w-4 h-4 text-primary" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="action-btn" onClick={() => openEditUser(user)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="action-btn action-btn-danger" onClick={() => handleDeleteUser(user)}>
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No team members</TableCell>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No team members</TableCell>
                 </TableRow>
               )}
             </TableBody>

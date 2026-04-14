@@ -17,6 +17,7 @@ import ItemsPage from "./pages/ItemsPage";
 import TeamPage from "./pages/TeamPage";
 import SalesFunnelPage from "./pages/SalesFunnelPage";
 import SalesPersonProfilePage from "./pages/SalesPersonProfilePage";
+import ProfileSetupPage from "./pages/ProfileSetupPage";
 import NotFound from "./pages/NotFound";
 import { QUOTATION_CREATE_ALLOWED_ROLES, TEAM_ALLOWED_ROLES } from "./lib/access-control";
 
@@ -44,6 +45,14 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/login" element={crmUser ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route
+        path="/profile-setup"
+        element={
+          <ProtectedRoute allowMissingCrmUser>
+            <ProfileSetupPage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />

@@ -21,6 +21,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   createUser: (email: string, password: string, name: string, role: UserRole, department: string, managerId: string | null) => Promise<void>;
+  completeProfile: (name: string, role: UserRole, phone: string, address: string, department: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -116,8 +117,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const completeProfile = async (
+    name: string,
+    role: UserRole,
+    phone: string,
+    address: string,
+    department: string
+  ) => {
+    if (!isFirebaseConfigured) {
+      throw new Error("Firebase is not configured.");
+    }
+    if (!firebaseUser) {
+      throw new Error("No authenticated user found.");
+    }
+
+    const userDoc = {
+      name,
+      email: firebaseUser.email || "",
+      role,
+      department,
+      managerId: null,
+      phone,
+      address,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    await setDoc(doc(db, "users", firebaseUser.uid), userDoc);
+
+    setCrmUser({
+      id: firebaseUser.uid,
+      name,
+      email: firebaseUser.email || "",
+      role,
+      department,
+      managerId: null,
+      phone,
+      address,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ firebaseUser, crmUser, setCrmUser, loading, login, resetPassword, logout, createUser }}>
+    <AuthContext.Provider value={{ firebaseUser, crmUser, setCrmUser, loading, login, resetPassword, logout, createUser, completeProfile }}>
       {children}
     </AuthContext.Provider>
   );
