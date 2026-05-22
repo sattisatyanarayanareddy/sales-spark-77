@@ -1,4 +1,4 @@
-# SalesCRM - Sales Pipeline Management System
+# SalesERP - Sales Pipeline Management System
 
 A modern, full-featured CRM application for managing sales quotations, team members, and sales pipeline.
 

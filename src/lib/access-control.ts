@@ -8,8 +8,8 @@ export const ROLE_HOME_ROUTE: Record<UserRole, string> = {
 };
 
 export const TEAM_ALLOWED_ROLES: UserRole[] = ["administrator", "general_manager", "sub_manager"];
-export const QUOTATION_CREATE_ALLOWED_ROLES: UserRole[] = ["sales"];
-export const QUOTATION_DELETE_ALLOWED_ROLES: UserRole[] = ["sales", "general_manager"];
+export const QUOTATION_CREATE_ALLOWED_ROLES: UserRole[] = ["sales", "sub_manager"];
+export const QUOTATION_DELETE_ALLOWED_ROLES: UserRole[] = ["sales", "sub_manager", "general_manager"];
 
 export const hasRoleAccess = (role: UserRole, allowedRoles?: UserRole[]) => {
   if (!allowedRoles || allowedRoles.length === 0) return true;

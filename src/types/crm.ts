@@ -12,6 +12,7 @@ export interface CRMUser {
   phone?: string;
   address?: string;
   updatedAt?: string;
+  disabled?: boolean;
 }
 
 export type QuotationStatus = "Draft" | "Created" | "Sent" | "Won";
@@ -25,6 +26,7 @@ export interface Customer {
   department: string;
   createdBy: string;
   userEmail: string;
+  disabled?: boolean;
 }
 
 export interface Product {
@@ -32,7 +34,7 @@ export interface Product {
   type: "Goods" | "Service";
   name: string;
   sku: string;
-  unit: "box" | "cm" | "dz" | "ft" | "g" | "in" | "kg" | "km" | "lb" | "mg" | "ml" | "m" | "pcs" | "roll" | "pack" | "pack of 50" | "pack of 100" | "pack of 500";
+  unit: string;
   description: string;
   salesDescription?: string;
   purchaseDescription?: string;
@@ -49,6 +51,7 @@ export interface Product {
   userEmail: string;
   createdAt: string;
   updatedAt: string;
+  disabled?: boolean;
 }
 
 export interface Quotation {
@@ -73,6 +76,7 @@ export interface Quotation {
   deliveryStatus: "Pending" | "Partial Delivery" | "Delivered";
   createdAt: string;
   updatedAt: string;
+  disabled?: boolean;
 }
 
 export interface DashboardStats {
@@ -97,6 +101,7 @@ export const STATUS_LABELS: Record<QuotationStatus, string> = {
   Draft: "Draft",
   Created: "Created",
   Sent: "Sent",
+  Won: "Won",
 };
 
 export type SalesFunnelStatus =
@@ -123,12 +128,14 @@ export interface SalesFunnel {
   salesPersonId: string;
   createdAt: string;
   updatedAt: string;
+  disabled?: boolean;
 }
 
 export const STATUS_COLORS: Record<QuotationStatus, string> = {
   Draft: "bg-gray-500/10 text-gray-500",
   Created: "bg-primary/10 text-primary",
   Sent: "bg-blue-500/10 text-blue-500",
+  Won: "bg-green-500/10 text-green-500",
 };
 
 export const SALES_FUNNEL_STATUS_LABELS: Record<SalesFunnelStatus, string> = {
@@ -150,3 +157,18 @@ export const SALES_FUNNEL_STATUS_COLORS: Record<SalesFunnelStatus, string> = {
   Lost: "bg-red-600/10 text-red-600",
   Won: "bg-green-600/10 text-green-600",
 };
+
+export interface AppNotification {
+  id: string;
+  type: "quotation_approval";
+  title: string;
+  message: string;
+  quotationId: string;
+  salespersonId: string;
+  salespersonName: string;
+  managerId: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  read?: boolean;
+  recipientId?: string;
+}

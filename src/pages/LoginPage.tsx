@@ -61,10 +61,10 @@ const LoginPage: React.FC = () => {
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary mb-4">
-            <BarChart3 className="w-7 h-7 text-primary-foreground" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white p-2 shadow-sm mb-4 border border-border/50">
+            <img src="/GCSS-Logoimg.png" alt="GCSS Logo" className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-3xl font-bold font-display text-foreground">SalesCRM</h1>
+          <h1 className="text-3xl font-bold font-display text-foreground">SalesERP</h1>
           <p className="text-muted-foreground mt-1">Sign in to your account</p>
         </div>
 

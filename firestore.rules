@@ -1,35 +1,62 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow authenticated users to read/write users collection
+    // Helper to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper to get user role
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // Helper to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && (getUserRole() == 'administrator');
+    }
+
+    // Users collection
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      // Allow user to update their own document, or an admin to update any user document
+      allow update, delete: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
     }
 
-    // Allow authenticated users to read/write customers
+    // Customers collection
     match /customers/{customerId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
-    // Allow authenticated users to read/write items
+    // Items collection
     match /items/{itemId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
-    // Allow authenticated users to read/write quotations
+    // Quotations collection
     match /quotations/{quotationId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
-    // Allow authenticated users to read/write sales funnel
+    // Sales funnel collection
     match /salesFunnel/{funnelId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
-    // Allow authenticated users to read/write counters
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Units collection
+    match /units/{unitId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Counters collection
     match /counters/{counterId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
   }
 }

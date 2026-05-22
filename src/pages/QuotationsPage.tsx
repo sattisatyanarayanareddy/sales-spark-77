@@ -3,14 +3,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchQuotations,
   updateQuotationDoc,
-  deleteQuotationDoc,
+  updateQuotationStatus,
   exportToCSV,
   exportQuotationToPDF,
   createSalesFunnelDoc,
   fetchSalesFunnelByQuotationId,
+  requestQuotationApproval,
 } from "@/lib/firestore-service";
 import { Quotation, QuotationStatus, STATUS_LABELS } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, Download, Edit, Trash2, Eye, Loader2, ExternalLink, ImageOff } from "lucide-react";
+import { Search, Plus, Download, Edit, Lock, Unlock, Eye, Loader2, ExternalLink, ImageOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -70,13 +72,17 @@ const QuotationsPage: React.FC = () => {
     return true;
   });
 
-  const handleDelete = async (id: string) => {
+  const handleToggleStatus = async (id: string, currentDisabled: boolean) => {
+    const newStatus = !currentDisabled;
+    const actionText = newStatus ? "disable" : "enable";
+    if (!confirm(`Are you sure you want to ${actionText} this quotation?`)) return;
     try {
-      await deleteQuotationDoc(id);
-      toast.success("Quotation deleted");
+      await updateQuotationStatus(id, newStatus);
+      toast.success(`Quotation ${newStatus ? "disabled" : "enabled"} successfully`);
       loadData();
     } catch (e) {
-      toast.error("Failed to delete");
+      console.error(e);
+      toast.error(`Failed to ${actionText} quotation`);
     }
   };
 
@@ -84,41 +90,63 @@ const QuotationsPage: React.FC = () => {
     if (!editQuotation) return;
     setSaving(true);
     try {
-      await updateQuotationDoc(editQuotation.id, {
-        status: editQuotation.status,
-        poNumber: editQuotation.poNumber,
-        poValue: editQuotation.poValue,
-        invoiceValue: editQuotation.invoiceValue,
-        followUpDate: editQuotation.followUpDate,
-        followUpNotes: editQuotation.followUpNotes,
-        deliveryStatus: editQuotation.deliveryStatus,
-      });
+      const original = quotations.find((q) => q.id === editQuotation.id);
+      const isSalesperson = crmUser.role === "sales";
+      const wasNotSent = original ? original.status !== "Sent" : true;
+      const isTryingToSend = editQuotation.status === "Sent";
 
-      // If status is Sent, link to sales funnel (no duplicate)
-      if (editQuotation.status === "Sent") {
-        const existingFunnel = await fetchSalesFunnelByQuotationId(editQuotation.id);
-        if (!existingFunnel) {
-          await createSalesFunnelDoc({
-            quotationId: editQuotation.id,
-            quotationNumber: editQuotation.quotationNumber,
-            companyName: editQuotation.companyName,
-            subject: editQuotation.subject,
-            quotationValue: editQuotation.totalValue,
-            followUpDate: editQuotation.followUpDate,
-            status: "Hot", // Default initial funnel status
-            poValue: editQuotation.poValue || 0,
-            deliveryStatus: editQuotation.deliveryStatus || "Pending",
-            invoiceValue: editQuotation.invoiceValue || 0,
-            salesPersonId: editQuotation.salesPersonId,
-          });
+      if (isSalesperson && wasNotSent && isTryingToSend) {
+        const originalStatus = original ? original.status : "Created";
+        await updateQuotationDoc(editQuotation.id, {
+          status: originalStatus,
+          poNumber: editQuotation.poNumber,
+          poValue: editQuotation.poValue,
+          invoiceValue: editQuotation.invoiceValue,
+          followUpDate: editQuotation.followUpDate,
+          followUpNotes: editQuotation.followUpNotes,
+          deliveryStatus: editQuotation.deliveryStatus,
+        });
+
+        await requestQuotationApproval(editQuotation);
+        toast.success("Status update to 'Sent' submitted for manager approval");
+      } else {
+        await updateQuotationDoc(editQuotation.id, {
+          status: editQuotation.status,
+          poNumber: editQuotation.poNumber,
+          poValue: editQuotation.poValue,
+          invoiceValue: editQuotation.invoiceValue,
+          followUpDate: editQuotation.followUpDate,
+          followUpNotes: editQuotation.followUpNotes,
+          deliveryStatus: editQuotation.deliveryStatus,
+        });
+
+        // If status is Sent, link to sales funnel (no duplicate)
+        if (editQuotation.status === "Sent") {
+          const existingFunnel = await fetchSalesFunnelByQuotationId(editQuotation.id);
+          if (!existingFunnel) {
+            await createSalesFunnelDoc({
+              quotationId: editQuotation.id,
+              quotationNumber: editQuotation.quotationNumber,
+              companyName: editQuotation.companyName,
+              subject: editQuotation.subject,
+              quotationValue: editQuotation.totalValue,
+              followUpDate: editQuotation.followUpDate,
+              status: "Cold", // Default initial funnel status
+              poValue: editQuotation.poValue || 0,
+              deliveryStatus: editQuotation.deliveryStatus || "Pending",
+              invoiceValue: editQuotation.invoiceValue || 0,
+              salesPersonId: editQuotation.salesPersonId,
+            });
+          }
         }
+
+        toast.success("Quotation updated");
       }
 
-      toast.success("Quotation updated");
       setEditQuotation(null);
       loadData();
-    } catch (e) {
-      toast.error("Failed to update");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update");
     } finally {
       setSaving(false);
     }
@@ -207,33 +235,56 @@ const QuotationsPage: React.FC = () => {
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No quotations found</TableCell>
                 </TableRow>
               ) : (
-                filtered.map((q) => (
-                  <TableRow key={q.id}>
-                    <TableCell className="font-mono text-xs">{q.quotationNumber}</TableCell>
-                    <TableCell>
-                      <p className="font-medium text-sm">{q.customerName}</p>
-                      <p className="text-xs text-muted-foreground">{q.companyName}</p>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate text-sm">{q.subject}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(q.totalValue)}</TableCell>
-                    <TableCell><StageBadge stage={q.status} /></TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="action-btn" onClick={() => setViewQuotation(q)}>
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="action-btn" onClick={() => setEditQuotation({ ...q })}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        {canDeleteQuotation(crmUser.role) && (
-                          <Button variant="ghost" size="icon" className="action-btn action-btn-danger" onClick={() => handleDelete(q.id)}>
-                            <Trash2 className="w-4 h-4 text-destructive" />
+                filtered.map((q) => {
+                  const isQuotationDisabled = !!q.disabled;
+                  return (
+                    <TableRow key={q.id} className={isQuotationDisabled ? "opacity-60 bg-muted/10" : ""}>
+                      <TableCell className="font-mono text-xs">
+                        <div className="flex items-center gap-2">
+                          {q.quotationNumber}
+                          {isQuotationDisabled && (
+                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 bg-destructive/10 text-destructive border-destructive/20 font-semibold">
+                              Disabled
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-medium text-sm">{q.customerName}</p>
+                        <p className="text-xs text-muted-foreground">{q.companyName}</p>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate text-sm">{q.subject}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency(q.totalValue)}</TableCell>
+                      <TableCell><StageBadge stage={q.status} /></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="action-btn" onClick={() => setViewQuotation(q)}>
+                            <Eye className="w-4 h-4" />
                           </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="action-btn"
+                            onClick={() => setEditQuotation({ ...q })}
+                            disabled={isQuotationDisabled}
+                            title={isQuotationDisabled ? "Cannot edit disabled quotation" : "Edit"}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={isQuotationDisabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
+                            onClick={() => handleToggleStatus(q.id, isQuotationDisabled)}
+                            title={isQuotationDisabled ? "Enable Quotation" : "Disable Quotation"}
+                          >
+                            {isQuotationDisabled ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

@@ -46,8 +46,8 @@ const CreateQuotationPage: React.FC = () => {
           fetchCustomers(crmUser.id, crmUser.role),
           fetchProducts(crmUser.id, crmUser.role),
         ]);
-        setCustomers(customersData);
-        setAvailableProducts(productsData);
+        setCustomers(customersData.filter((c) => !c.disabled));
+        setAvailableProducts(productsData.filter((p) => !p.disabled));
       } catch (error) {
         console.error("Error loading data:", error);
         toast.error("Failed to load customers and items");
@@ -152,10 +152,11 @@ const CreateQuotationPage: React.FC = () => {
         totalValue,
         status: "Created",
         poNumber: "",
+        poValue: 0,
         invoiceValue: 0,
         followUpDate: null,
         followUpNotes: "",
-        deliveryStatus: "",
+        deliveryStatus: "Pending",
       });
 
       toast.success("Quotation created successfully!");

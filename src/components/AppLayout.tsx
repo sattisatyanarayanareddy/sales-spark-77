@@ -17,12 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { canManageTeam } from "@/lib/access-control";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const roleLabel = {
-  administrator: "Administrator",
+  administrator: "Admin",
   general_manager: "General Manager",
-  sub_manager: "Sub Manager",
-  sales: "Sales Person",
+  sub_manager: "Manager",
+  sales: "Salesperson",
 };
 
 const roleBadgeClass = {
@@ -68,15 +69,15 @@ const AppLayout: React.FC = () => {
         className={`
           fixed md:sticky top-0 left-0 z-50 md:z-auto
           w-64 h-screen bg-sidebar text-sidebar-foreground
-          flex flex-col transition-transform duration-200
+          flex flex-col transition-transform duration-200 border-r border-sidebar-border/30
           ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}
       >
         <div className="p-6 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-sidebar-primary flex items-center justify-center">
-            <BarChart3 className="w-5 h-5 text-sidebar-primary-foreground" />
+          <div className="w-9 h-9 rounded-xl bg-white p-1 flex items-center justify-center shadow-md border border-sidebar-border/30">
+            <img src="/GCSS-Logoimg.png" alt="GCSS Logo" className="w-full h-full object-contain" />
           </div>
-          <span className="font-display font-bold text-lg">SalesCRM</span>
+          <span className="font-display font-bold text-lg bg-gradient-to-r from-sidebar-primary to-ring bg-clip-text text-transparent">SalesERP</span>
           <Button
             variant="ghost"
             size="icon"
@@ -107,7 +108,7 @@ const AppLayout: React.FC = () => {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent/80 px-3 py-2"
+            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent/80 px-3 py-2 rounded-xl"
             onClick={() => {
               navigate("/profile");
               setMobileOpen(false);
@@ -121,7 +122,7 @@ const AppLayout: React.FC = () => {
               {crmUser.profilePicture ? (
                 <img src={crmUser.profilePicture} alt={crmUser.name} className="w-full h-full rounded-full object-cover" />
               ) : (
-                crmUser.name.split(" ").map((n) => n[0]).join("")
+                (crmUser.name || "User").split(" ").filter(Boolean).map((n) => n[0]).join("").substring(0, 2).toUpperCase()
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -145,18 +146,23 @@ const AppLayout: React.FC = () => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 app-main-surface">
-        <header className="h-14 flex items-center border-b border-border app-main-header px-4 md:px-6 sticky top-0 z-30">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden mr-2"
-            onClick={() => setMobileOpen(true)}
-          >
-            <Menu className="w-5 h-5" />
-          </Button>
-          <h2 className="text-lg font-display font-semibold capitalize">
-            {location.pathname.split("/")[1] || "Dashboard"}
-          </h2>
+        <header className="h-14 flex items-center justify-between border-b border-border app-main-header px-4 md:px-6 sticky top-0 z-30">
+          <div className="flex items-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden mr-2"
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+            <h2 className="text-lg font-display font-semibold capitalize">
+              {location.pathname.split("/")[1] || "Dashboard"}
+            </h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+          </div>
         </header>
         <main className="flex-1 overflow-auto">
           <Outlet />

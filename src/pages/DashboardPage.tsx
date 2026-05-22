@@ -1,55 +1,98 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import StatCard from "../components/StatCard";
-import { fetchAllUsers, fetchSalesFunnel } from "../lib/firestore-service";
-import { CRMUser, SalesFunnel } from "../types/crm";
-import { FileText, TrendingUp, Clock, CheckCircle2, Users } from "lucide-react";
+import {
+  fetchAllUsers,
+  fetchSalesFunnel,
+  fetchNotificationsForManager,
+  approveQuotationDoc,
+  rejectQuotationDoc,
+} from "../lib/firestore-service";
+import { CRMUser, SalesFunnel, SALES_FUNNEL_STATUS_COLORS, AppNotification } from "../types/crm";
+import { FileText, TrendingUp, Clock, CheckCircle2, Users, Check, X, ShieldAlert } from "lucide-react";
+import { motion, Variants } from "framer-motion";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 const DashboardPage = () => {
   const { crmUser } = useAuth();
   const [funnels, setFunnels] = useState<SalesFunnel[]>([]);
   const [users, setUsers] = useState<CRMUser[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const loadData = async () => {
+    if (!crmUser) return;
+
+    setLoading(true);
+    try {
+      if (crmUser.role === "administrator") {
+        const data = await fetchAllUsers();
+        setUsers(data);
+        setFunnels([]);
+      } else if (crmUser.role === "general_manager") {
+        const [allUsers, allFunnels] = await Promise.all([
+          fetchAllUsers(),
+          fetchSalesFunnel(crmUser.id, crmUser.role)
+        ]);
+        setUsers(allUsers);
+        setFunnels(allFunnels);
+      } else {
+        const [allFunnels, allUsers] = await Promise.all([
+          fetchSalesFunnel(crmUser.id, crmUser.role),
+          fetchAllUsers()
+        ]);
+        setFunnels(allFunnels);
+        setUsers(allUsers);
+
+        if (crmUser.role === "sub_manager") {
+          const notifs = await fetchNotificationsForManager(crmUser.id);
+          setNotifications(notifs);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadData = async () => {
-      if (!crmUser) return;
-
-      setLoading(true);
-      try {
-        if (crmUser.role === "administrator") {
-          const data = await fetchAllUsers();
-          setUsers(data);
-          setFunnels([]);
-        } else {
-          const data = await fetchSalesFunnel(crmUser.id, crmUser.role);
-          setFunnels(data);
-        }
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadData();
   }, [crmUser]);
 
-  const quotationValue = funnels.reduce((sum, f) => sum + (f.quotationValue || 0), 0);
-  const poValue = funnels
-    .filter(f => f.poValue && f.poValue > 0)
-    .reduce((sum, f) => sum + (f.poValue || 0), 0);
-  const invoiceValue = funnels
-    .filter(f => f.invoiceValue && f.invoiceValue > 0)
-    .reduce((sum, f) => sum + (f.invoiceValue || 0), 0);
-  const wonDeals = funnels.filter(f => f.status === "Won").length;
+  const handleApprove = async (notificationId: string, quotationId: string) => {
+    setActionLoading(true);
+    try {
+      await approveQuotationDoc(notificationId, quotationId);
+      toast.success("Quotation approved successfully!");
+      await loadData();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to approve quotation");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-  const sortedUsers = [...users].sort((a, b) => {
-    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return bTime - aTime;
-  });
-  const recentUsers = sortedUsers.slice(0, 5);
+  const handleReject = async (notificationId: string, quotationId: string) => {
+    setActionLoading(true);
+    try {
+      await rejectQuotationDoc(notificationId, quotationId);
+      toast.success("Quotation rejected and marked as draft");
+      await loadData();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to reject quotation");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (!crmUser) return null;
 
   if (loading) {
     return (
@@ -59,9 +102,84 @@ const DashboardPage = () => {
     );
   }
 
+  const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.08
+      }
+    }
+  };
+
+  const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
+  };
+
+  // General Manager role specific filters
+  const isGM = crmUser.role === "general_manager";
+  const managers = users.filter((u) => u.role === "sub_manager" && u.managerId === crmUser.id);
+  const visibleManagers = managers.length > 0 ? managers : users.filter((u) => u.role === "sub_manager");
+  const activeManager = selectedManagerId ? visibleManagers.find((m) => m.id === selectedManagerId) : null;
+
+  // Filter funnels based on selected manager
+  const filteredFunnels = activeManager
+    ? (() => {
+        const teamIds = users
+          .filter((u) => u.managerId === activeManager.id || u.id === activeManager.id)
+          .map((u) => u.id);
+        return funnels.filter((f) => teamIds.includes(f.salesPersonId));
+      })()
+    : funnels;
+
+  // Metrics calculations
+  const quotationValue = filteredFunnels.reduce((sum, f) => sum + (f.quotationValue || 0), 0);
+  const poValue = filteredFunnels
+    .filter(f => f.poValue && f.poValue > 0)
+    .reduce((sum, f) => sum + (f.poValue || 0), 0);
+  const invoiceValue = filteredFunnels
+    .filter(f => f.invoiceValue && f.invoiceValue > 0)
+    .reduce((sum, f) => sum + (f.invoiceValue || 0), 0);
+  const wonDeals = filteredFunnels.filter(f => f.status === "Won").length;
+
+  const sortedUsers = [...users].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+  const recentUsers = sortedUsers.slice(0, 5);
+
+  // Get active manager's salesperson list
+  const activeTeamMembers = activeManager
+    ? users.filter((u) => u.managerId === activeManager.id && u.role === "sales")
+    : [];
+
+  // Get recent activities (recent sales funnels)
+  const recentActivities = filteredFunnels.slice(0, 5);
+
+  // Helper for computing team stats for a manager card
+  const getManagerTeamStats = (managerId: string) => {
+    const teamIds = users
+      .filter((u) => u.managerId === managerId || u.id === managerId)
+      .map((u) => u.id);
+    const teamFunnels = funnels.filter((f) => teamIds.includes(f.salesPersonId));
+    return {
+      activeDeals: teamFunnels.filter((f) => !["Won", "Closed", "Cancelled", "Lost"].includes(f.status)).length,
+      quotationValue: teamFunnels.reduce((sum, f) => sum + (f.quotationValue || 0), 0),
+      poValue: teamFunnels.reduce((sum, f) => sum + (f.poValue || 0), 0),
+      wonDeals: teamFunnels.filter((f) => f.status === "Won").length,
+    };
+  };
+
   return (
-    <div className="page-container space-y-6">
-      <div className="dashboard-hero flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="page-container space-y-6"
+    >
+      <motion.div variants={itemVariants} className="dashboard-hero flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
@@ -69,22 +187,96 @@ const DashboardPage = () => {
           </p>
         </div>
         <div className="text-sm text-muted-foreground">
-          {crmUser?.role === "administrator" ? "Overview of registered users and recent activity" : "Updated live from your sales data"}
+          {crmUser?.role === "administrator" 
+            ? "Overview of registered users and recent activity" 
+            : activeManager 
+              ? `Filtered by Manager: ${activeManager.name}` 
+              : "Updated live from your sales data"}
         </div>
-      </div>
+      </motion.div>
 
+      {/* General Manager: Managers Grid */}
+      {isGM && (
+        <motion.div variants={itemVariants} className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Your Managers</h2>
+            {selectedManagerId && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setSelectedManagerId(null)}
+                className="h-8 border-primary/30 text-primary hover:bg-primary/5 transition-all"
+              >
+                Show All Managers
+              </Button>
+            )}
+          </div>
+          
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleManagers.map((m) => {
+              const stats = getManagerTeamStats(m.id);
+              const isSelected = selectedManagerId === m.id;
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => setSelectedManagerId(isSelected ? null : m.id)}
+                  className={`cursor-pointer p-5 rounded-2xl border transition-all duration-300 ${
+                    isSelected
+                      ? "border-primary bg-primary/5 shadow-md shadow-primary/5 ring-1 ring-primary"
+                      : "border-border/65 bg-card hover:border-primary/50 hover:shadow-lg hover:shadow-muted/20"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-base">{m.name}</h3>
+                      <p className="text-xs text-muted-foreground">{m.department || "Sales Manager"}</p>
+                    </div>
+                    <Badge variant={isSelected ? "default" : "outline"} className="text-[10px] px-2 py-0.5">
+                      {isSelected ? "Active Filter" : "Manager"}
+                    </Badge>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-border/40 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Quotation Value</p>
+                      <p className="font-bold text-sm text-foreground">${stats.quotationValue.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Active Deals</p>
+                      <p className="font-bold text-sm text-foreground">{stats.activeDeals}</p>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-muted-foreground">PO Value</p>
+                      <p className="font-bold text-sm text-foreground">${stats.poValue.toLocaleString()}</p>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-muted-foreground">Won Deals</p>
+                      <p className="font-bold text-sm text-success">{stats.wonDeals}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {visibleManagers.length === 0 && (
+              <p className="text-muted-foreground text-sm py-4">No managers assigned to your team yet.</p>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Admin dashboard layout */}
       {crmUser?.role === "administrator" ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <motion.div variants={itemVariants} className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard
               title="Total Users"
               value={users.length.toString()}
               icon={Users}
               description="Registered users in the CRM"
             />
-          </div>
+          </motion.div>
 
-          <div className="dashboard-panel">
+          <motion.div variants={itemVariants} className="dashboard-panel">
             <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
             {recentUsers.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
@@ -95,24 +287,87 @@ const DashboardPage = () => {
                 {recentUsers.map((user) => (
                   <div
                     key={user.id}
-                    className="p-3 rounded-lg border border-border/40 hover:bg-accent/40 transition-colors"
+                    className="p-3.5 rounded-xl border border-border/40 hover:bg-accent/40 transition-all duration-300"
                   >
-                    <p className="font-medium">{user.name || user.email}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-semibold text-sm">{user.name || user.email}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Role: {user.role.replace("_", " ")} • {user.department}
                     </p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Joined: {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "Unknown"}
                     </p>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </motion.div>
         </>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {/* General Manager stats banner indicator */}
+          {isGM && activeManager && (
+            <motion.div
+              variants={itemVariants}
+              className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20 text-sm animate-in fade-in slide-in-from-top-2 duration-300"
+            >
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-primary shrink-0" />
+                <span>Showing team stats for manager <strong>{activeManager.name}</strong></span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedManagerId(null)} className="h-7 text-primary hover:bg-primary/10">
+                Reset Filter
+              </Button>
+            </motion.div>
+          )}
+
+          {/* Manager: Pending Approvals Panel */}
+          {crmUser.role === "sub_manager" && notifications.filter(n => n.status === "pending").length > 0 && (
+            <motion.div variants={itemVariants} className="dashboard-panel bg-gradient-to-br from-primary/5 via-card to-card border-primary/20">
+              <div className="flex items-center gap-2 mb-4 border-b border-border/40 pb-3">
+                <ShieldAlert className="w-5 h-5 text-primary" />
+                <h2 className="text-xl font-semibold">Quotations Pending Your Approval</h2>
+              </div>
+              <div className="space-y-3">
+                {notifications.filter(n => n.status === "pending").map((notif) => (
+                  <div
+                    key={notif.id}
+                    className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border border-primary/25 bg-card/80 hover:shadow-md transition-all gap-4"
+                  >
+                    <div className="flex-1 space-y-1">
+                      <p className="font-semibold text-sm text-foreground">{notif.title}</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{notif.message}</p>
+                      <p className="text-[10px] text-muted-foreground/80 mt-1">
+                        Requested: {notif.createdAt ? new Date(notif.createdAt).toLocaleString() : "Just now"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 md:self-center">
+                      <Button
+                        size="sm"
+                        disabled={actionLoading}
+                        onClick={() => handleApprove(notif.id, notif.quotationId)}
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs flex items-center gap-1"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={actionLoading}
+                        onClick={() => handleReject(notif.id, notif.quotationId)}
+                        className="border-destructive/30 hover:bg-destructive/5 text-destructive h-8 text-xs flex items-center gap-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          <motion.div variants={itemVariants} className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard
               title="Quotation Value"
               value={`$${quotationValue.toLocaleString()}`}
@@ -137,41 +392,75 @@ const DashboardPage = () => {
               icon={Clock}
               description="Successful conversions"
             />
-          </div>
+          </motion.div>
 
-          <div className="dashboard-panel">
-            <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
-            {funnels.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">
-                No sales funnel entries yet. Send quotations to start tracking deals!
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {funnels.slice(0, 5).map((funnel) => (
-                  <div
-                    key={funnel.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border/40 hover:bg-accent/40 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium">{funnel.companyName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Quotation #{funnel.quotationNumber}
-                      </p>
+          <div className="grid gap-6 md:grid-cols-3">
+            {/* Left Column: Recent Activity (Funnels) */}
+            <motion.div variants={itemVariants} className={`dashboard-panel ${isGM && activeManager ? "md:col-span-2" : "md:col-span-3"}`}>
+              <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
+              {recentActivities.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No sales funnel entries yet. Send quotations to start tracking deals!
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {recentActivities.map((funnel) => (
+                    <div
+                      key={funnel.id}
+                      className="flex items-center justify-between p-3.5 rounded-xl border border-border/40 hover:bg-accent/40 transition-all duration-300"
+                    >
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm">{funnel.companyName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Quotation #{funnel.quotationNumber}
+                          {users.find(u => u.id === funnel.salesPersonId) && (
+                            <span className="ml-2 font-medium text-primary/80">• Salesperson: {users.find(u => u.id === funnel.salesPersonId)?.name}</span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-1.5">
+                        <p className="font-bold text-sm text-foreground">
+                          ${(funnel.quotationValue || 0).toLocaleString()}
+                        </p>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold tracking-wide border border-transparent ${
+                          SALES_FUNNEL_STATUS_COLORS[funnel.status] || "bg-muted text-muted-foreground"
+                        }`}>
+                          {funnel.status}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold">${funnel.quotationValue.toLocaleString()}</p>
-                      <p className="text-sm text-muted-foreground capitalize">
-                        {funnel.status}
-                      </p>
-                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+
+            {/* Right Column (General Manager specific): Salespersons Sidebar */}
+            {isGM && activeManager && (
+              <motion.div variants={itemVariants} className="dashboard-panel">
+                <h2 className="text-xl font-semibold mb-4">Salesperson Team</h2>
+                {activeTeamMembers.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-4">No salespersons assigned to this manager's team.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {activeTeamMembers.map((u) => {
+                      const personFunnels = funnels.filter(f => f.salesPersonId === u.id);
+                      const totalSales = personFunnels.reduce((sum, f) => sum + (f.quotationValue || 0), 0);
+                      return (
+                        <div key={u.id} className="p-3 rounded-xl border border-border/40 bg-card hover:bg-accent/10 transition-all">
+                          <p className="font-semibold text-sm">{u.name}</p>
+                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                          <p className="text-xs font-bold text-primary mt-1">${totalSales.toLocaleString()} in Quotations</p>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                )}
+              </motion.div>
             )}
           </div>
         </>
       )}
-    </div>
+    </motion.div>
   );
 };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchTeamUsers, updateUserDoc, deleteUserDoc } from "@/lib/firestore-service";
+import { fetchTeamUsers, updateUserDoc, updateUserStatus } from "@/lib/firestore-service";
 import { CRMUser, UserRole } from "@/types/crm";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, AlertCircle, Pencil, Trash2 } from "lucide-react";
+import { Loader2, Plus, AlertCircle, Pencil, Lock, Unlock } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -34,10 +34,10 @@ const roleBadge: Record<string, string> = {
 };
 
 const roleLabel: Record<string, string> = {
-  administrator: "Administrator",
+  administrator: "Admin",
   general_manager: "General Manager",
-  sub_manager: "Sub Manager",
-  sales: "Sales Person",
+  sub_manager: "Manager",
+  sales: "Salesperson",
 };
 
 const TeamPage: React.FC = () => {
@@ -50,6 +50,7 @@ const TeamPage: React.FC = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingUser, setEditingUser] = useState<CRMUser | null>(null);
+  const [managerId, setManagerId] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -93,14 +94,22 @@ const TeamPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const managerId = role === "general_manager" || role === "administrator" ? null : crmUser!.id;
+      let finalManagerId: string | null = null;
+      if (crmUser.role === "administrator") {
+        if (role === "sub_manager" || role === "sales") {
+          finalManagerId = managerId || null;
+        }
+      } else {
+        finalManagerId = role === "general_manager" || role === "administrator" ? null : crmUser!.id;
+      }
+
       await createUser(
         email,
         password,
         name,
         role,
         department,
-        managerId
+        finalManagerId
       );
       toast.success(`Team member added! Temporary password: ${password}`);
       setShowAddDialog(false);
@@ -109,6 +118,7 @@ const TeamPage: React.FC = () => {
       setRole("sales");
       setDepartment("");
       setPassword(defaultPassword);
+      setManagerId(null);
       await loadData();
     } catch (err: any) {
       console.error(err);
@@ -137,6 +147,7 @@ const TeamPage: React.FC = () => {
     setEmail(user.email);
     setRole(user.role);
     setDepartment(user.department);
+    setManagerId(user.managerId);
     setShowEditDialog(true);
   };
 
@@ -154,15 +165,25 @@ const TeamPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      let finalManagerId: string | null = editingUser.managerId;
+      if (crmUser.role === "administrator") {
+        if (role === "sub_manager" || role === "sales") {
+          finalManagerId = managerId;
+        } else {
+          finalManagerId = null;
+        }
+      }
+
       await updateUserDoc(editingUser.id, {
         name,
         role,
         department,
-        managerId: editingUser.managerId,
+        managerId: finalManagerId,
       });
       toast.success("User updated successfully");
       setShowEditDialog(false);
       setEditingUser(null);
+      setManagerId(null);
       await loadData();
     } catch (err: any) {
       console.error(err);
@@ -185,22 +206,24 @@ const TeamPage: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (user: CRMUser) => {
+  const handleToggleStatus = async (user: CRMUser) => {
     if (user.id === crmUser.id) {
-      toast.error("You cannot delete your own account");
+      toast.error("You cannot disable your own account");
       return;
     }
-
-    const confirmed = window.confirm(`Delete user ${user.name}? This will remove the user profile from Firestore.`);
+    const currentDisabled = !!user.disabled;
+    const newStatus = !currentDisabled;
+    const actionText = newStatus ? "disable" : "enable";
+    const confirmed = window.confirm(`Are you sure you want to ${actionText} user ${user.name}?`);
     if (!confirmed) return;
 
     try {
-      await deleteUserDoc(user.id);
-      toast.success("User deleted from team");
+      await updateUserStatus(user.id, newStatus);
+      toast.success(`User ${newStatus ? "disabled" : "enabled"} successfully`);
       await loadData();
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "Failed to delete user");
+      toast.error(err.message || `Failed to ${actionText} user`);
     }
   };
 
@@ -273,22 +296,56 @@ const TeamPage: React.FC = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="role">Role *</Label>
-                  <Select value={role} onValueChange={(val) => setRole(val as UserRole)}>
+                  <Select value={role} onValueChange={(val) => { setRole(val as UserRole); setManagerId(null); }}>
                     <SelectTrigger id="role">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sales">Sales Person</SelectItem>
-                      <SelectItem value="sub_manager">Sub Manager</SelectItem>
-                      {crmUser.role !== "sales" && (
+                      <SelectItem value="sales">Salesperson</SelectItem>
+                      <SelectItem value="sub_manager">Manager</SelectItem>
+                      {(crmUser.role === "general_manager" || crmUser.role === "administrator") && (
                         <SelectItem value="general_manager">General Manager</SelectItem>
                       )}
                       {crmUser.role === "administrator" && (
-                        <SelectItem value="administrator">Administrator</SelectItem>
+                        <SelectItem value="administrator">Admin</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
                 </div>
+
+                {crmUser.role === "administrator" && role === "sub_manager" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="gm-select">Assign General Manager</Label>
+                    <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
+                      <SelectTrigger id="gm-select">
+                        <SelectValue placeholder="Select General Manager" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned / None</SelectItem>
+                        {teamUsers.filter((u) => u.role === "general_manager").map((gm) => (
+                          <SelectItem key={gm.id} value={gm.id}>{gm.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {crmUser.role === "administrator" && role === "sales" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="manager-select">Assign Manager</Label>
+                    <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
+                      <SelectTrigger id="manager-select">
+                        <SelectValue placeholder="Select Manager" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned / None</SelectItem>
+                        {teamUsers.filter((u) => u.role === "sub_manager").map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="department">Department *</Label>
@@ -363,31 +420,61 @@ const TeamPage: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`border-0 ${roleBadge[user.role]}`}>
-                      {roleLabel[user.role]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{user.department}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="action-btn" onClick={() => handleSendResetLink(user.email)}>
-                        <AlertCircle className="w-4 h-4 text-primary" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="action-btn" onClick={() => openEditUser(user)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="action-btn action-btn-danger" onClick={() => handleDeleteUser(user)}>
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filteredUsers.map((user) => {
+                const isUserDisabled = !!user.disabled;
+                return (
+                  <TableRow key={user.id} className={isUserDisabled ? "opacity-60 bg-muted/10" : ""}>
+                    <TableCell className="font-medium flex items-center gap-2">
+                      {user.name}
+                      {isUserDisabled && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 bg-destructive/10 text-destructive border-destructive/20 font-semibold">
+                          Disabled
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`border-0 ${roleBadge[user.role]}`}>
+                        {roleLabel[user.role]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{user.department}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="inline-flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="action-btn"
+                          onClick={() => handleSendResetLink(user.email)}
+                          disabled={isUserDisabled}
+                          title={isUserDisabled ? "Cannot reset password for disabled user" : "Send Reset Link"}
+                        >
+                          <AlertCircle className="w-4 h-4 text-primary" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="action-btn"
+                          onClick={() => openEditUser(user)}
+                          disabled={isUserDisabled}
+                          title={isUserDisabled ? "Cannot edit disabled user" : "Edit"}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={isUserDisabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
+                          onClick={() => handleToggleStatus(user)}
+                          title={isUserDisabled ? "Enable User" : "Disable User"}
+                        >
+                          {isUserDisabled ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {filteredUsers.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No team members</TableCell>
@@ -425,19 +512,56 @@ const TeamPage: React.FC = () => {
 
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role *</Label>
-              <Select value={role} onValueChange={(val) => setRole(val as UserRole)}>
+              <Select value={role} onValueChange={(val) => { setRole(val as UserRole); setManagerId(null); }}>
                 <SelectTrigger id="edit-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sales">Sales Person</SelectItem>
-                  <SelectItem value="sub_manager">Sub Manager</SelectItem>
-                  {crmUser.role === "general_manager" && (
+                  <SelectItem value="sales">Salesperson</SelectItem>
+                  <SelectItem value="sub_manager">Manager</SelectItem>
+                  {(crmUser.role === "general_manager" || crmUser.role === "administrator") && (
                     <SelectItem value="general_manager">General Manager</SelectItem>
+                  )}
+                  {crmUser.role === "administrator" && (
+                    <SelectItem value="administrator">Admin</SelectItem>
                   )}
                 </SelectContent>
               </Select>
             </div>
+
+            {crmUser.role === "administrator" && role === "sub_manager" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-gm-select">Assign General Manager</Label>
+                <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
+                  <SelectTrigger id="edit-gm-select">
+                    <SelectValue placeholder="Select General Manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Unassigned / None</SelectItem>
+                    {teamUsers.filter((u) => u.role === "general_manager").map((gm) => (
+                      <SelectItem key={gm.id} value={gm.id}>{gm.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {crmUser.role === "administrator" && role === "sales" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-manager-select">Assign Manager</Label>
+                <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
+                  <SelectTrigger id="edit-manager-select">
+                    <SelectValue placeholder="Select Manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Unassigned / None</SelectItem>
+                    {teamUsers.filter((u) => u.role === "sub_manager").map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="edit-department">Department *</Label>

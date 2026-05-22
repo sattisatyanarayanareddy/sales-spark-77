@@ -90,10 +90,10 @@ const ProfileSetupPage: React.FC = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sales">Sales Person</SelectItem>
-                  <SelectItem value="sub_manager">Sub Manager</SelectItem>
+                  <SelectItem value="sales">Salesperson</SelectItem>
+                  <SelectItem value="sub_manager">Manager</SelectItem>
                   <SelectItem value="general_manager">General Manager</SelectItem>
-                  <SelectItem value="administrator">Administrator</SelectItem>
+                  <SelectItem value="administrator">Admin</SelectItem>
                 </SelectContent>
               </Select>
             </div>
