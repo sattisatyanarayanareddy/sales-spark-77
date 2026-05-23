@@ -133,7 +133,11 @@ export async function fetchAllUsers(): Promise<CRMUser[]> {
 
 export async function fetchTeamUsers(managerId: string, role: string): Promise<CRMUser[]> {
   const allUsers = await fetchAllUsers();
-  if (role === "general_manager" || role === "administrator") return allUsers.filter((u) => u.id !== managerId);
+  if (role === "administrator") return allUsers.filter((u) => u.id !== managerId);
+  if (role === "general_manager") {
+    // General Manager should see only their direct managers (sub_manager)
+    return allUsers.filter((u) => u.role === "sub_manager" && u.managerId === managerId);
+  }
   return allUsers.filter((u) => u.managerId === managerId);
 }
 
@@ -381,30 +385,25 @@ export async function deleteCustomer(id: string): Promise<void> {
 
 // ── Products (Items) ──
 
-export async function fetchProducts(userId: string, role: string): Promise<Product[]> {
+export async function fetchProducts(userId: string, role: string, userManagerId?: string | null): Promise<Product[]> {
   try {
     if (role === "general_manager" || role === "administrator") {
       const snap = await getDocs(collection(db, "items"));
-      return snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as Product[];
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
     } else if (role === "sub_manager") {
+      // Manager sees their own items + all items created by their team members
       const team = await fetchTeamUsers(userId, role);
       const teamIds = [userId, ...team.map((t) => t.id)];
       const snap = await getDocs(collection(db, "items"));
-      const allProducts = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as Product[];
+      const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
       return allProducts.filter((p) => teamIds.includes(p.createdBy));
     } else {
-      const q = query(collection(db, "items"), where("createdBy", "==", userId));
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as Product[];
+      // Sales: sees their own items + their manager's items (shared pool)
+      const snap = await getDocs(collection(db, "items"));
+      const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
+      return allProducts.filter((p) =>
+        p.createdBy === userId || (userManagerId && p.createdBy === userManagerId)
+      );
     }
   } catch (error) {
     console.error("Error fetching products:", error);
@@ -655,27 +654,33 @@ export interface TeamPerformanceRow {
 }
 
 export async function fetchTeamPerformanceData(managerId: string, managerRole: string): Promise<TeamPerformanceRow[]> {
-  // Fetch all team members (salespersons) under this manager
+  // For general managers: show only their managers (sub_managers).
   const team = await fetchTeamUsers(managerId, managerRole);
-  const salesPersons = team.filter((u) => u.role === "sales");
 
-  // Also include the manager themselves
-  const managerSnap = await getDoc(doc(db, "users", managerId));
-  const allMembers: CRMUser[] = [];
-  if (managerSnap.exists()) {
-    const d = managerSnap.data();
-    allMembers.push({
-      id: managerId,
-      name: d.name || "",
-      email: d.email || "",
-      role: d.role || "sub_manager",
-      department: d.department || "",
-      managerId: d.managerId || null,
-      createdAt: toDate(d.createdAt),
-      disabled: !!d.disabled,
-    });
+  let allMembers: CRMUser[] = [];
+  if (managerRole === "general_manager") {
+    // fetchTeamUsers for general_manager already returns sub_managers assigned to this GM
+    allMembers = team;
+  } else {
+    // For regular managers, fetch all salespersons under them and include the manager themselves
+    const salesPersons = team.filter((u) => u.role === "sales");
+
+    const managerSnap = await getDoc(doc(db, "users", managerId));
+    if (managerSnap.exists()) {
+      const d = managerSnap.data();
+      allMembers.push({
+        id: managerId,
+        name: d.name || "",
+        email: d.email || "",
+        role: d.role || "sub_manager",
+        department: d.department || "",
+        managerId: d.managerId || null,
+        createdAt: toDate(d.createdAt),
+        disabled: !!d.disabled,
+      });
+    }
+    allMembers.push(...salesPersons);
   }
-  allMembers.push(...salesPersons);
 
   // Fetch all their sales funnel entries in batches
   const allIds = allMembers.map((m) => m.id);

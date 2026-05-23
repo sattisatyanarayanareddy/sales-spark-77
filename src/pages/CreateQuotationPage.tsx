@@ -34,7 +34,8 @@ const CreateQuotationPage: React.FC = () => {
   const [selectedProducts, setSelectedProducts] = useState<Array<{product: Product, quantity: number}>>([]);
   const [open, setOpen] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const [selectedProductQuantities, setSelectedProductQuantities] = useState<Record<string, number>>({});
+  // Use string state for in-flight quantity editing to allow clearing the field
+  const [selectedProductQuantities, setSelectedProductQuantities] = useState<Record<string, string>>({});
   const [subject, setSubject] = useState("");
 
   useEffect(() => {
@@ -44,7 +45,7 @@ const CreateQuotationPage: React.FC = () => {
         setLoadingData(true);
         const [customersData, productsData] = await Promise.all([
           fetchCustomers(crmUser.id, crmUser.role),
-          fetchProducts(crmUser.id, crmUser.role),
+          fetchProducts(crmUser.id, crmUser.role, crmUser.managerId),
         ]);
         setCustomers(customersData.filter((c) => !c.disabled));
         setAvailableProducts(productsData.filter((p) => !p.disabled));
@@ -81,29 +82,34 @@ const CreateQuotationPage: React.FC = () => {
         // Add to selection with default quantity of 1
         setSelectedProductQuantities(prevQuantities => ({
           ...prevQuantities,
-          [productId]: 1
+          [productId]: "1"
         }));
         return [...prev, productId];
       }
     });
   };
 
-  const handleUpdateSelectedQuantity = (productId: string, quantity: number) => {
-    if (quantity < 1) return; // Minimum quantity is 1
-    setSelectedProductQuantities(prev => ({
-      ...prev,
-      [productId]: quantity
-    }));
+  const handleUpdateSelectedQuantity = (productId: string, rawValue: string) => {
+    // Allow free-form typing — store raw string, parse on blur/submit
+    setSelectedProductQuantities((prev) => ({ ...prev, [productId]: rawValue }));
+  };
+
+  const handleSelectedQuantityBlur = (productId: string) => {
+    // On blur, clamp to minimum 1
+    setSelectedProductQuantities((prev) => {
+      const num = parseInt(prev[productId] || "1", 10);
+      return { ...prev, [productId]: isNaN(num) || num < 1 ? "1" : String(num) };
+    });
   };
 
   const handleAddSelectedProducts = () => {
     const newProducts = availableProducts
-      .filter(product => selectedProductIds.includes(product.id))
-      .filter(product => !selectedProducts.find(p => p.product.id === product.id))
-      .map(product => ({
-        product,
-        quantity: selectedProductQuantities[product.id] || 1
-      }));
+      .filter((product) => selectedProductIds.includes(product.id))
+      .filter((product) => !selectedProducts.find((p) => p.product.id === product.id))
+      .map((product) => {
+        const qty = parseInt(selectedProductQuantities[product.id] || "1", 10);
+        return { product, quantity: isNaN(qty) || qty < 1 ? 1 : qty };
+      });
 
     if (newProducts.length > 0) {
       setSelectedProducts([...selectedProducts, ...newProducts]);
@@ -117,10 +123,27 @@ const CreateQuotationPage: React.FC = () => {
     setSelectedProducts(selectedProducts.filter((_, i) => i !== index));
   };
 
-  const handleUpdateQuantity = (index: number, quantity: number) => {
+  const handleUpdateQuantity = (index: number, rawValue: string) => {
+    // Allow free typing — store as string and parse only when needed
     const updated = [...selectedProducts];
-    updated[index].quantity = quantity;
+    const num = parseInt(rawValue, 10);
+    updated[index] = { ...updated[index], quantity: isNaN(num) || num < 1 ? 1 : num };
     setSelectedProducts(updated);
+  };
+
+  // String state for the bottom table quantity inputs to allow clearing
+  const [tableQuantityStrings, setTableQuantityStrings] = useState<Record<number, string>>({});
+
+  const handleTableQuantityChange = (index: number, rawValue: string) => {
+    setTableQuantityStrings((prev) => ({ ...prev, [index]: rawValue }));
+  };
+
+  const handleTableQuantityBlur = (index: number) => {
+    const raw = tableQuantityStrings[index] ?? String(selectedProducts[index]?.quantity ?? 1);
+    const num = parseInt(raw, 10);
+    const clamped = isNaN(num) || num < 1 ? 1 : num;
+    handleUpdateQuantity(index, String(clamped));
+    setTableQuantityStrings((prev) => ({ ...prev, [index]: String(clamped) }));
   };
 
   const totalValue = selectedProducts.reduce((sum, item) => sum + (item.product.value * item.quantity), 0);
@@ -348,25 +371,33 @@ const CreateQuotationPage: React.FC = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleUpdateSelectedQuantity(productId, (selectedProductQuantities[productId] || 1) - 1)}
-                              disabled={(selectedProductQuantities[productId] || 1) <= 1}
+                              type="button"
+                              onClick={() => {
+                                const cur = parseInt(selectedProductQuantities[productId] || "1", 10);
+                                handleUpdateSelectedQuantity(productId, String(Math.max(1, cur - 1)));
+                              }}
+                              disabled={parseInt(selectedProductQuantities[productId] || "1", 10) <= 1}
                               className="h-7 w-7 p-0"
                             >
                               -
                             </Button>
                             <Input
-                              type="number"
-                              min="1"
-                              max={product.quantity || undefined}
-                              value={selectedProductQuantities[productId] || 1}
-                              onChange={(e) => handleUpdateSelectedQuantity(productId, parseInt(e.target.value) || 1)}
+                              type="text"
+                              inputMode="numeric"
+                              value={selectedProductQuantities[productId] ?? "1"}
+                              onChange={(e) => handleUpdateSelectedQuantity(productId, e.target.value.replace(/[^0-9]/g, ""))}
+                              onBlur={() => handleSelectedQuantityBlur(productId)}
                               className="w-16 h-7 text-center text-sm"
                             />
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleUpdateSelectedQuantity(productId, (selectedProductQuantities[productId] || 1) + 1)}
-                              disabled={product.quantity && (selectedProductQuantities[productId] || 1) >= product.quantity}
+                              type="button"
+                              onClick={() => {
+                                const cur = parseInt(selectedProductQuantities[productId] || "1", 10);
+                                handleUpdateSelectedQuantity(productId, String(cur + 1));
+                              }}
+                              disabled={!!(product.quantity && parseInt(selectedProductQuantities[productId] || "1", 10) >= product.quantity)}
                               className="h-7 w-7 p-0"
                             >
                               +
@@ -374,7 +405,7 @@ const CreateQuotationPage: React.FC = () => {
                           </div>
                         </div>
                         <div className="mt-2 text-sm font-medium text-primary">
-                          Total: ${(product.value * (selectedProductQuantities[productId] || 1)).toLocaleString()}
+                          Total: ${(product.value * (parseInt(selectedProductQuantities[productId] || "1", 10) || 1)).toLocaleString()}
                         </div>
                       </div>
                     </Card>
@@ -386,7 +417,7 @@ const CreateQuotationPage: React.FC = () => {
                   {selectedProductIds.length} item{selectedProductIds.length > 1 ? 's' : ''} selected •
                   Total: ${selectedProductIds.reduce((total, productId) => {
                     const product = availableProducts.find(p => p.id === productId);
-                    const quantity = selectedProductQuantities[productId] || 1;
+                    const quantity = parseInt(selectedProductQuantities[productId] || "1", 10) || 1;
                     return total + (product ? product.value * quantity : 0);
                   }, 0).toLocaleString()}
                 </div>
@@ -424,10 +455,11 @@ const CreateQuotationPage: React.FC = () => {
                         <td className="py-2 px-2 text-muted-foreground">{item.product.modelNumber || "—"}</td>
                         <td className="py-2 px-2 text-center">
                           <Input
-                            type="number"
-                            min="1"
-                            value={item.quantity}
-                            onChange={(e) => handleUpdateQuantity(idx, parseInt(e.target.value) || 1)}
+                            type="text"
+                            inputMode="numeric"
+                            value={tableQuantityStrings[idx] ?? String(item.quantity)}
+                            onChange={(e) => handleTableQuantityChange(idx, e.target.value.replace(/[^0-9]/g, ""))}
+                            onBlur={() => handleTableQuantityBlur(idx)}
                             className="w-16 h-8 text-center"
                           />
                         </td>

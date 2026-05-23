@@ -48,6 +48,11 @@ const AppLayout: React.FC = () => {
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { to: "/team", icon: Users, label: "Users" },
       ]
+    : crmUser.role === "general_manager"
+    ? [
+        { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+        { to: "/team", icon: Users, label: "Team" },
+      ]
     : [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { to: "/customers", icon: Users, label: "Customers" },

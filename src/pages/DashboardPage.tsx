@@ -270,9 +270,9 @@ const DashboardPage = () => {
           <motion.div variants={itemVariants} className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard
               title="Total Users"
-              value={users.length.toString()}
+              value={users.filter((u) => u.role !== "administrator").length.toString()}
               icon={Users}
-              description="Registered users in the CRM"
+              description="Registered users in the CRM (excluding admins)"
             />
           </motion.div>
 

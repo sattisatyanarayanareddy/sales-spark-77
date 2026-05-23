@@ -98,7 +98,7 @@ const ItemsPage = () => {
     if (!crmUser) return;
     try {
       setLoading(true);
-      const data = await fetchProducts(crmUser.id, crmUser.role);
+      const data = await fetchProducts(crmUser.id, crmUser.role, crmUser.managerId);
       setProducts(data);
     } catch (error) {
       console.error("Error fetching products:", error);
