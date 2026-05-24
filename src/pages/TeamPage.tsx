@@ -8,6 +8,7 @@ import {
   fetchSalesFunnel,
   fetchTeamPerformanceData,
   exportTeamPerformanceToCSV,
+  subscribeToAllUsers,
 } from "@/lib/firestore-service";
 import { CRMUser, UserRole, Quotation, SalesFunnel } from "@/types/crm";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -45,6 +46,10 @@ import {
   X,
   Eye,
   EyeOff,
+  Users,
+  Shield,
+  Building2,
+  UserCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -391,6 +396,16 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
 
 // ── TeamPage ──────────────────────────────────────────────────────────────────
 
+const DEPARTMENTS = [
+  "Sales",
+  "Hardware",
+  "Software",
+  "Support",
+  "Marketing",
+  "Finance",
+  "HR",
+];
+
 const TeamPage: React.FC = () => {
   const { crmUser, createUser, resetPassword } = useAuth();
   const [teamUsers, setTeamUsers] = useState<CRMUser[]>([]);
@@ -417,6 +432,39 @@ const TeamPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Helper functions for Dialog Form Controls
+  const handleOpenAddChange = (open: boolean) => {
+    setShowAddDialog(open);
+    if (open) {
+      setName("");
+      setEmail("");
+      setRole("sales");
+      setDepartment("");
+      setManagerId(null);
+      setDesignation("");
+      setCompanyName("");
+      setPassword("");
+      setConfirmPassword("");
+      setShowPassword(false);
+      setShowConfirmPassword(false);
+    }
+  };
+
+  const handleDepartmentChange = (val: string) => {
+    setDepartment(val);
+    if (role === "sales" && managerId) {
+      const selectedMgr = teamUsers.find((u) => u.id === managerId);
+      if (selectedMgr && selectedMgr.department.toLowerCase() !== val.toLowerCase()) {
+        setManagerId(null);
+      }
+    }
+  };
+
+  const handleRoleChange = (val: UserRole) => {
+    setRole(val);
+    setManagerId(null);
+  };
+
   // Password validation
   const passwordRules = [
     { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
@@ -428,29 +476,32 @@ const TeamPage: React.FC = () => {
   const isPasswordValid = password.length > 0 && passwordRules.every((r) => r.test(password));
   const passwordsMatch = password === confirmPassword;
 
-  const loadData = async () => {
+  useEffect(() => {
     if (!crmUser) return;
     setLoading(true);
-    try {
-      const users = await fetchTeamUsers(crmUser.id, crmUser.role);
-      setTeamUsers(users);
-      // Count non-admin users only
-      const nonAdminUsers = users.filter((u) => u.role !== "administrator");
+
+    const unsubscribe = subscribeToAllUsers((allUsers) => {
+      let filtered: CRMUser[] = [];
+      if (crmUser.role === "administrator") {
+        filtered = allUsers.filter((u) => u.id !== crmUser.id);
+      } else if (crmUser.role === "general_manager") {
+        filtered = allUsers.filter((u) => u.role === "sub_manager" && u.managerId === crmUser.id);
+      } else {
+        filtered = allUsers.filter((u) => u.managerId === crmUser.id);
+      }
+
+      setTeamUsers(filtered);
+
+      const nonAdminUsers = filtered.filter((u) => u.role !== "administrator");
       const totalUsers =
         crmUser.role === "general_manager" || crmUser.role === "administrator"
-          ? nonAdminUsers.length  // admin itself isn't counted
+          ? nonAdminUsers.length
           : nonAdminUsers.length;
       setUserCount(totalUsers);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load team data");
-    } finally {
       setLoading(false);
-    }
-  };
+    });
 
-  useEffect(() => {
-    loadData();
+    return unsubscribe;
   }, [crmUser]);
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -489,7 +540,6 @@ const TeamPage: React.FC = () => {
       setManagerId(null);
       setDesignation("");
       setCompanyName("");
-      await loadData();
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to add team member");
@@ -540,7 +590,6 @@ const TeamPage: React.FC = () => {
       });
       toast.success("User updated successfully");
       setShowEditDialog(false);
-      await loadData();
     } catch (err: any) {
       toast.error(err.message || "Failed to update user");
     } finally {
@@ -564,7 +613,6 @@ const TeamPage: React.FC = () => {
     const newStatus = !user.disabled;
     await updateUserStatus(user.id, newStatus);
     toast.success(`User ${newStatus ? "disabled" : "enabled"}`);
-    await loadData();
   };
 
   const handleExportPerformance = async () => {
@@ -586,6 +634,13 @@ const TeamPage: React.FC = () => {
     }
   };
 
+  const activeMembersCount = teamUsers.filter((u) => !u.disabled).length;
+  const managersCount = teamUsers.filter((u) => u.role === "sub_manager").length;
+  const salesCount = teamUsers.filter((u) => u.role === "sales").length;
+  const uniqueDeptsCount = Array.from(
+    new Set(teamUsers.map((u) => u.department?.toLowerCase()).filter(Boolean))
+  ).length;
+
   if (!crmUser) return null;
   if (loading) return <div className="page-container flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -593,26 +648,33 @@ const TeamPage: React.FC = () => {
     <div className="page-container space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="section-title">{pageTitle}</h2>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <Dialog open={showAddDialog} onOpenChange={handleOpenAddChange}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={() => handleOpenAddChange(true)}>
               <Plus className="w-4 h-4 mr-2" />
               {addButtonLabel}
             </Button>
           </DialogTrigger>
-          <DialogContent className="w-full max-w-md max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{addDialogTitle}</DialogTitle>
-              <DialogDescription>{addDialogDescription}</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleAddMember} className="space-y-4 mt-4">
+          <DialogContent className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-0 bg-card/95 backdrop-blur-md">
+            <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-violet-500/5 to-transparent">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                <Plus className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">{addDialogTitle}</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  {addDialogDescription}
+                </DialogDescription>
+              </div>
+            </div>
+            <form onSubmit={handleAddMember} className="space-y-4 p-6">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required className="rounded-xl" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email *</Label>
-                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="rounded-xl" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password *</Label>
@@ -624,7 +686,7 @@ const TeamPage: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Create a strong password"
                     required
-                    className="pr-10"
+                    className="pr-10 rounded-xl"
                     autoComplete="new-password"
                   />
                   <button
@@ -664,7 +726,7 @@ const TeamPage: React.FC = () => {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter the password"
                     required
-                    className={`pr-10 ${
+                    className={`pr-10 rounded-xl ${
                       confirmPassword.length > 0
                         ? passwordsMatch
                           ? "border-green-500 focus-visible:ring-green-500"
@@ -691,8 +753,8 @@ const TeamPage: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role *</Label>
-                <Select value={role} onValueChange={(val) => setRole(val as UserRole)}>
-                  <SelectTrigger id="role"><SelectValue /></SelectTrigger>
+                <Select value={role} onValueChange={(val) => handleRoleChange(val as UserRole)}>
+                  <SelectTrigger id="role" className="rounded-xl"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="sales">Salesperson</SelectItem>
                     <SelectItem value="sub_manager">Manager</SelectItem>
@@ -703,20 +765,160 @@ const TeamPage: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="department">Department *</Label>
-                <Input id="department" value={department} onChange={(e) => setDepartment(e.target.value)} required />
+                <Select value={department} onValueChange={(val) => handleDepartmentChange(val)}>
+                  <SelectTrigger id="department" className="rounded-xl">
+                    <SelectValue placeholder="Select Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEPARTMENTS.map((dept) => (
+                      <SelectItem key={dept} value={dept.toLowerCase()}>
+                        {dept}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              {crmUser.role === "administrator" && role === "sub_manager" && (
+                <div className="space-y-2">
+                  <Label htmlFor="add-gm-select">Assign General Manager</Label>
+                  <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
+                    <SelectTrigger id="add-gm-select" className="rounded-xl">
+                      <SelectValue placeholder="Select General Manager" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Unassigned / None</SelectItem>
+                      {teamUsers.filter((u) => u.role === "general_manager").map((gm) => (
+                        <SelectItem key={gm.id} value={gm.id}>{gm.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {crmUser.role === "administrator" && role === "sales" && (
+                <div className="space-y-2">
+                  <Label htmlFor="add-manager-select">Assign Manager</Label>
+                  <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
+                    <SelectTrigger id="add-manager-select" className="rounded-xl">
+                      <SelectValue placeholder={department ? "Select Manager" : "Select department first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Unassigned / None</SelectItem>
+                      {teamUsers
+                        .filter((u) => u.role === "sub_manager" && u.department.toLowerCase() === department.toLowerCase())
+                        .map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {!department && (
+                    <p className="text-xs text-muted-foreground">Please select a department first to see managers.</p>
+                  )}
+                  {department && teamUsers.filter((u) => u.role === "sub_manager" && u.department.toLowerCase() === department.toLowerCase()).length === 0 && (
+                    <p className="text-xs text-amber-500 font-medium">⚠️ No managers found in the "{DEPARTMENTS.find(d => d.toLowerCase() === department.toLowerCase()) || department}" department.</p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="designation">Designation</Label>
-                <Input id="designation" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Executive" />
+                <Input id="designation" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Executive" className="rounded-xl" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="companyName">Company Name</Label>
-                <Input id="companyName" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Corp" />
+                <Input id="companyName" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Corp" className="rounded-xl" />
               </div>
-              <Button type="submit" className="w-full" disabled={submitting || !isPasswordValid || !passwordsMatch}>Add Member</Button>
+              <Button type="submit" className="w-full rounded-xl h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-medium mt-2" disabled={submitting || !isPasswordValid || !passwordsMatch}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {submitting ? "Adding..." : "Add Member"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
+      </div>
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="stat-card"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Members</p>
+              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{activeMembersCount}</h3>
+            </div>
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
+              <Users className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center text-xs text-muted-foreground">
+            <span className="text-green-500 mr-1">✓</span> Accounts with system access
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.05 }}
+          className="stat-card"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Managers</p>
+              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{managersCount}</h3>
+            </div>
+            <div className="p-3 rounded-2xl bg-violet-500/10 text-violet-500">
+              <Shield className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center text-xs text-muted-foreground">
+            Directing team departments
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+          className="stat-card"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Salespeople</p>
+              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{salesCount}</h3>
+            </div>
+            <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-500">
+              <UserCheck className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center text-xs text-muted-foreground">
+            Driving active lead funnels
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.15 }}
+          className="stat-card"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Departments</p>
+              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{uniqueDeptsCount || DEPARTMENTS.length}</h3>
+            </div>
+            <div className="p-3 rounded-2xl bg-teal-500/10 text-teal-500">
+              <Building2 className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center text-xs text-muted-foreground">
+            Functional organizational units
+          </div>
+        </motion.div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -808,15 +1010,20 @@ const TeamPage: React.FC = () => {
 
       {/* Edit User Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Team Member</DialogTitle>
-            <DialogDescription>
-              Update user role and profile details.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="w-full max-w-md max-h-[80vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-0 bg-card/95 backdrop-blur-md">
+          <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-violet-500/5 to-transparent">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+              <Pencil className="w-5 h-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-bold tracking-tight text-foreground">Edit Team Member</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                Update user role and profile details.
+              </DialogDescription>
+            </div>
+          </div>
 
-          <form onSubmit={handleEditUser} className="space-y-4 mt-4">
+          <form onSubmit={handleEditUser} className="space-y-4 p-6">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Full Name *</Label>
               <Input
@@ -824,18 +1031,19 @@ const TeamPage: React.FC = () => {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                className="rounded-xl"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="edit-email">Email</Label>
-              <Input id="edit-email" value={email} disabled />
+              <Input id="edit-email" value={email} disabled className="rounded-xl opacity-60" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role *</Label>
-              <Select value={role} onValueChange={(val) => { setRole(val as UserRole); setManagerId(null); }}>
-                <SelectTrigger id="edit-role">
+              <Select value={role} onValueChange={(val) => handleRoleChange(val as UserRole)}>
+                <SelectTrigger id="edit-role" className="rounded-xl">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -855,7 +1063,7 @@ const TeamPage: React.FC = () => {
               <div className="space-y-2">
                 <Label htmlFor="edit-gm-select">Assign General Manager</Label>
                 <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
-                  <SelectTrigger id="edit-gm-select">
+                  <SelectTrigger id="edit-gm-select" className="rounded-xl">
                     <SelectValue placeholder="Select General Manager" />
                   </SelectTrigger>
                   <SelectContent>
@@ -872,27 +1080,41 @@ const TeamPage: React.FC = () => {
               <div className="space-y-2">
                 <Label htmlFor="edit-manager-select">Assign Manager</Label>
                 <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
-                  <SelectTrigger id="edit-manager-select">
-                    <SelectValue placeholder="Select Manager" />
+                  <SelectTrigger id="edit-manager-select" className="rounded-xl">
+                    <SelectValue placeholder={department ? "Select Manager" : "Select department first"} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Unassigned / None</SelectItem>
-                    {teamUsers.filter((u) => u.role === "sub_manager").map((m) => (
-                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                    ))}
+                    {teamUsers
+                      .filter((u) => u.role === "sub_manager" && u.department.toLowerCase() === department.toLowerCase())
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
+                {!department && (
+                  <p className="text-xs text-muted-foreground">Please select a department first to see managers.</p>
+                )}
+                {department && teamUsers.filter((u) => u.role === "sub_manager" && u.department.toLowerCase() === department.toLowerCase()).length === 0 && (
+                  <p className="text-xs text-amber-500 font-medium">⚠️ No managers found in the "{DEPARTMENTS.find(d => d.toLowerCase() === department.toLowerCase()) || department}" department.</p>
+                )}
               </div>
             )}
 
             <div className="space-y-2">
               <Label htmlFor="edit-department">Department *</Label>
-              <Input
-                id="edit-department"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                required
-              />
+              <Select value={department} onValueChange={(val) => handleDepartmentChange(val)}>
+                <SelectTrigger id="edit-department" className="rounded-xl">
+                  <SelectValue placeholder="Select Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DEPARTMENTS.map((dept) => (
+                    <SelectItem key={dept} value={dept.toLowerCase()}>
+                      {dept}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -902,6 +1124,7 @@ const TeamPage: React.FC = () => {
                 value={designation}
                 onChange={(e) => setDesignation(e.target.value)}
                 placeholder="e.g. Senior Executive"
+                className="rounded-xl"
               />
             </div>
 
@@ -912,15 +1135,17 @@ const TeamPage: React.FC = () => {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="e.g. Acme Corp"
+                className="rounded-xl"
               />
             </div>
 
             <div className="flex gap-2 pt-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowEditDialog(false)}>
+              <Button type="button" variant="outline" className="flex-1 rounded-xl h-11" onClick={() => setShowEditDialog(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="flex-1" disabled={submitting}>
-                {submitting ? "Saving..." : "Save"}
+              <Button type="submit" className="flex-1 rounded-xl h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-medium" disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {submitting ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           </form>

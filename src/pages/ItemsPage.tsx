@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { fetchProducts, updateProductStatus, createProduct, updateProduct, fetchUnits, createUnit, UnitItem } from "../lib/firestore-service";
+import { subscribeToProducts, updateProductStatus, createProduct, updateProduct, fetchUnits, createUnit, UnitItem } from "../lib/firestore-service";
 import { Product } from "../types/crm";
-import { Plus, Lock, Unlock, Pencil, Search, AlertCircle, CheckCircle2, X, Image as ImageIcon } from "lucide-react";
+import { Plus, Lock, Unlock, Pencil, Search, AlertCircle, CheckCircle2, X, Image as ImageIcon, Loader2 } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -22,6 +22,7 @@ const ItemsPage = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     type: "Goods" as "Goods" | "Service",
@@ -94,22 +95,15 @@ const ItemsPage = () => {
     }
   };
 
-  const loadProducts = async () => {
-    if (!crmUser) return;
-    try {
-      setLoading(true);
-      const data = await fetchProducts(crmUser.id, crmUser.role, crmUser.managerId);
-      setProducts(data);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadProducts();
+    if (!crmUser) return;
+    setLoading(true);
+    const unsubscribe = subscribeToProducts(crmUser.id, crmUser.role, crmUser.managerId, (data) => {
+      setProducts(data);
+      setLoading(false);
+    });
     loadUnits();
+    return unsubscribe;
   }, [crmUser]);
 
   const handleNameChange = (val: string) => {
@@ -197,6 +191,7 @@ const ItemsPage = () => {
       return;
     }
 
+    setSaving(true);
     try {
       // 1. Auto-create unit if not exists in database
       let finalUnit = formData.unit.trim() || "pcs";
@@ -259,10 +254,11 @@ const ItemsPage = () => {
 
       handleClearSelected();
       setOpen(false);
-      await loadProducts();
     } catch (error) {
       console.error("Error saving product:", error);
       toast.error("Failed to save item.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -272,7 +268,6 @@ const ItemsPage = () => {
     if (!confirm(`Are you sure you want to ${actionText} this item?`)) return;
     try {
       await updateProductStatus(productId, newStatus);
-      await loadProducts();
       toast.success(`Item ${newStatus ? "disabled" : "enabled"} successfully.`);
     } catch (error) {
       console.error("Error updating item status:", error);
@@ -623,15 +618,19 @@ const ItemsPage = () => {
                   <Button
                     type="submit"
                     className="w-full shadow-lg shadow-primary/15 hover:shadow-primary/25 transition-all bg-primary text-primary-foreground hover:bg-primary/90"
+                    disabled={saving}
                   >
-                    Save Changes
+                    {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                    {saving ? "Saving Changes..." : "Save Changes"}
                   </Button>
                 ) : (
                   <Button
                     type="submit"
                     className="w-full shadow-lg shadow-primary/15 hover:shadow-primary/25 transition-all"
+                    disabled={saving}
                   >
-                    Create &amp; Add New Item
+                    {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                    {saving ? "Creating Item..." : "Create & Add New Item"}
                   </Button>
                 )}
               </div>

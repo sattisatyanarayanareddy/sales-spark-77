@@ -29,7 +29,7 @@ const AppRoutes = () => {
   if (!isFirebaseConfigured) {
     return (
       <Routes>
-        <Route path="*" element={<SetupPage />} />
+        <Route path="*" element={<NotFound envMissing />} />
       </Routes>
     );
   }

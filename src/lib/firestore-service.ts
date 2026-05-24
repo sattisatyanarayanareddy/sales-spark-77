@@ -398,23 +398,28 @@ export async function deleteCustomer(id: string): Promise<void> {
 
 export async function fetchProducts(userId: string, role: string, userManagerId?: string | null): Promise<Product[]> {
   try {
+    const snap = await getDocs(collection(db, "items"));
+    const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
+
     if (role === "general_manager" || role === "administrator") {
-      const snap = await getDocs(collection(db, "items"));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
-    } else if (role === "sub_manager") {
-      // Manager sees their own items + all items created by their team members
-      const team = await fetchTeamUsers(userId, role);
-      const teamIds = [userId, ...team.map((t) => t.id)];
-      const snap = await getDocs(collection(db, "items"));
-      const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
-      return allProducts.filter((p) => teamIds.includes(p.createdBy));
+      return allProducts;
+    }
+
+    const users = await fetchAllUsers();
+    const userRoleMap = new Map(users.map(u => [u.id, u.role]));
+
+    if (role === "sub_manager") {
+      // Manager sees only manager-created items
+      return allProducts.filter((p) => {
+        const creatorRole = userRoleMap.get(p.createdBy) || "sales";
+        return creatorRole === "sub_manager" || p.createdBy === userId;
+      });
     } else {
-      // Sales: sees their own items + their manager's items (shared pool)
-      const snap = await getDocs(collection(db, "items"));
-      const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
-      return allProducts.filter((p) =>
-        p.createdBy === userId || (userManagerId && p.createdBy === userManagerId)
-      );
+      // Salesperson sees only salesperson-created items
+      return allProducts.filter((p) => {
+        const creatorRole = userRoleMap.get(p.createdBy) || "sales";
+        return creatorRole === "sales" || p.createdBy === userId;
+      });
     }
   } catch (error) {
     console.error("Error fetching products:", error);
@@ -1224,5 +1229,182 @@ export async function updateUserStatus(userId: string, disabled: boolean): Promi
   await updateDoc(doc(db, "users", userId), {
     disabled,
     updatedAt: serverTimestamp(),
+  });
+}
+
+// ── Real-time Subscriptions ──
+
+export function subscribeToAllUsers(callback: (users: CRMUser[]) => void): () => void {
+  const q = collection(db, "users");
+  return onSnapshot(q, (snap) => {
+    const users = snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name || "",
+        email: data.email || "",
+        role: data.role || "sales",
+        department: data.department || "",
+        managerId: (data.managerId && data.managerId !== "null") ? data.managerId : null,
+        createdAt: toDate(data.createdAt),
+        phone: data.phone || "",
+        address: data.address || "",
+        profilePicture: data.profilePicture || undefined,
+        signature: data.signature || "",
+        designation: data.designation || "",
+        companyName: data.companyName || "",
+        updatedAt: toDate(data.updatedAt),
+        disabled: !!data.disabled,
+      } as CRMUser;
+    });
+    callback(users);
+  });
+}
+
+export function subscribeToSalesFunnel(
+  userId: string,
+  role: string,
+  callback: (funnels: SalesFunnel[]) => void
+): () => void {
+  const q = collection(db, "salesFunnel");
+  return onSnapshot(q, (snap) => {
+    const allFunnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
+    let filtered: SalesFunnel[] = [];
+    if (role === "general_manager" || role === "administrator") {
+      filtered = allFunnels;
+    } else {
+      const ownIds = [userId];
+      filtered = allFunnels.filter((f) => !f.salesPersonId || ownIds.includes(f.salesPersonId));
+    }
+    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    callback(filtered);
+  });
+}
+
+export function subscribeToNotifications(
+  recipientId: string,
+  callback: (notifications: AppNotification[]) => void
+): () => void {
+  const q = query(
+    collection(db, "notifications"),
+    where("recipientId", "==", recipientId)
+  );
+  return onSnapshot(q, (snap) => {
+    const notifs = snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        type: data.type || "quotation_approval",
+        title: data.title || "",
+        message: data.message || "",
+        quotationId: data.quotationId || "",
+        salespersonId: data.salespersonId || "",
+        salespersonName: data.salespersonName || "",
+        managerId: data.managerId || "",
+        status: data.status || "pending",
+        createdAt: toDate(data.createdAt),
+        read: !!data.read,
+        recipientId: data.recipientId || "",
+      } as AppNotification;
+    });
+    notifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    callback(notifs);
+  });
+}
+
+export function subscribeToQuotations(
+  userId: string,
+  role: string,
+  callback: (quotations: Quotation[]) => void
+): () => void {
+  let q;
+  if (role === "general_manager" || role === "administrator") {
+    q = query(collection(db, "quotations"), orderBy("createdAt", "desc"));
+  } else {
+    q = query(collection(db, "quotations"), where("salesPersonId", "==", userId), orderBy("createdAt", "desc"));
+  }
+  
+  return onSnapshot(q, (snap) => {
+    const quotations = snap.docs.map((d) => mapQuotation(d.id, d.data()));
+    callback(quotations);
+  }, (error) => {
+    console.warn("Index warning or other error on snapshot query, falling back to client sort", error);
+    const fallbackQ = (role === "general_manager" || role === "administrator")
+      ? query(collection(db, "quotations"))
+      : query(collection(db, "quotations"), where("salesPersonId", "==", userId));
+    
+    onSnapshot(fallbackQ, (snap) => {
+      const quotations = snap.docs.map((d) => mapQuotation(d.id, d.data()));
+      quotations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      callback(quotations);
+    });
+  });
+}
+
+export function subscribeToProducts(
+  userId: string,
+  role: string,
+  userManagerId: string | null,
+  callback: (products: Product[]) => void
+): () => void {
+  const qUsers = collection(db, "users");
+  let unsubscribeProducts: (() => void) | null = null;
+  
+  const unsubscribeUsers = onSnapshot(qUsers, (usersSnap) => {
+    const users = usersSnap.docs.map((d) => ({
+      id: d.id,
+      role: d.data().role || "sales",
+    }));
+    const userRoleMap = new Map(users.map(u => [u.id, u.role]));
+    
+    if (unsubscribeProducts) unsubscribeProducts();
+    
+    const qProducts = collection(db, "items");
+    unsubscribeProducts = onSnapshot(qProducts, (prodSnap) => {
+      const allProducts = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
+      let filtered: Product[] = [];
+      
+      if (role === "general_manager" || role === "administrator") {
+        filtered = allProducts;
+      } else if (role === "sub_manager") {
+        filtered = allProducts.filter((p) => {
+          const creatorRole = userRoleMap.get(p.createdBy) || "sales";
+          return creatorRole === "sub_manager" || p.createdBy === userId;
+        });
+      } else {
+        filtered = allProducts.filter((p) => {
+          const creatorRole = userRoleMap.get(p.createdBy) || "sales";
+          return creatorRole === "sales" || p.createdBy === userId;
+        });
+      }
+      callback(filtered);
+    });
+  });
+  
+  return () => {
+    unsubscribeUsers();
+    if (unsubscribeProducts) unsubscribeProducts();
+  };
+}
+
+export function subscribeToCustomers(
+  userId: string,
+  role: string,
+  callback: (customers: Customer[]) => void
+): () => void {
+  const q = collection(db, "customers");
+  return onSnapshot(q, (snap) => {
+    const allCustomers = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as Customer[];
+    
+    let filtered: Customer[] = [];
+    if (role === "general_manager" || role === "administrator") {
+      filtered = allCustomers;
+    } else {
+      filtered = allCustomers.filter((c) => c.createdBy === userId);
+    }
+    callback(filtered);
   });
 }

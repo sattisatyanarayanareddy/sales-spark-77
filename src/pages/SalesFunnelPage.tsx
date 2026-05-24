@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  fetchSalesFunnel,
   updateSalesFunnelDoc,
   updateSalesFunnelStatus,
-  fetchAllUsers,
+  subscribeToSalesFunnel,
+  subscribeToAllUsers,
 } from "@/lib/firestore-service";
 import { SalesFunnel, SalesFunnelStatus, SALES_FUNNEL_STATUS_LABELS, CRMUser } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
@@ -42,26 +42,23 @@ const SalesFunnelPage: React.FC = () => {
     }
   }, [editFunnel]);
 
-  const loadData = async () => {
+  useEffect(() => {
     if (!crmUser) return;
     setLoadingData(true);
-    try {
-      const [fs, allUsers] = await Promise.all([
-        fetchSalesFunnel(crmUser.id, crmUser.role),
-        fetchAllUsers(),
-      ]);
-      setFunnels(fs);
-      setUsers(allUsers);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load sales funnel");
-    } finally {
-      setLoadingData(false);
-    }
-  };
 
-  useEffect(() => {
-    loadData();
+    const unsubFunnels = subscribeToSalesFunnel(crmUser.id, crmUser.role, (fs) => {
+      setFunnels(fs);
+      setLoadingData(false);
+    });
+
+    const unsubUsers = subscribeToAllUsers((allUsers) => {
+      setUsers(allUsers);
+    });
+
+    return () => {
+      unsubFunnels();
+      unsubUsers();
+    };
   }, [crmUser]);
 
   if (!crmUser) return null;
@@ -86,7 +83,6 @@ const SalesFunnelPage: React.FC = () => {
     try {
       await updateSalesFunnelStatus(id, newStatus);
       toast.success(`Sales funnel entry ${newStatus ? "disabled" : "enabled"} successfully`);
-      loadData();
     } catch (e) {
       console.error(e);
       toast.error(`Failed to ${actionText} sales funnel entry`);
@@ -108,7 +104,6 @@ const SalesFunnelPage: React.FC = () => {
       });
       toast.success("Sales funnel updated");
       setEditFunnel(null);
-      loadData();
     } catch (e) {
       toast.error("Failed to update");
     } finally {

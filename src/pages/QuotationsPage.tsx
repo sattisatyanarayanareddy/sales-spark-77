@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  fetchQuotations,
   updateQuotationDoc,
   updateQuotationStatus,
   exportToCSV,
@@ -9,6 +8,7 @@ import {
   createSalesFunnelDoc,
   fetchSalesFunnelByQuotationId,
   requestQuotationApproval,
+  subscribeToQuotations,
 } from "@/lib/firestore-service";
 import { Quotation, QuotationStatus, STATUS_LABELS } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
@@ -38,22 +38,14 @@ const QuotationsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
-  const loadData = async () => {
+  useEffect(() => {
     if (!crmUser) return;
     setLoadingData(true);
-    try {
-      const qs = await fetchQuotations(crmUser.id, crmUser.role);
+    const unsubscribe = subscribeToQuotations(crmUser.id, crmUser.role, (qs) => {
       setQuotations(qs);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load quotations");
-    } finally {
       setLoadingData(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
+    });
+    return unsubscribe;
   }, [crmUser]);
 
   if (!crmUser) return null;
@@ -79,7 +71,6 @@ const QuotationsPage: React.FC = () => {
     try {
       await updateQuotationStatus(id, newStatus);
       toast.success(`Quotation ${newStatus ? "disabled" : "enabled"} successfully`);
-      loadData();
     } catch (e) {
       console.error(e);
       toast.error(`Failed to ${actionText} quotation`);
@@ -144,7 +135,6 @@ const QuotationsPage: React.FC = () => {
       }
 
       setEditQuotation(null);
-      loadData();
     } catch (e: any) {
       toast.error(e.message || "Failed to update");
     } finally {

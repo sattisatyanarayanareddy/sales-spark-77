@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { fetchCustomers, updateCustomerStatus, createCustomer } from "../lib/firestore-service";
+import { subscribeToCustomers, updateCustomerStatus, createCustomer } from "../lib/firestore-service";
 import { Customer } from "../types/crm";
-import { Plus, Lock, Unlock } from "lucide-react";
+import { Plus, Lock, Unlock, Loader2 } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -30,6 +30,7 @@ const CustomersPage = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     companyName: "",
@@ -38,23 +39,15 @@ const CustomersPage = () => {
     department: "",
   });
 
-  const loadCustomers = useCallback(async () => {
-    if (!crmUser) return;
-    try {
-      setLoading(true);
-      const data = await fetchCustomers(crmUser.id, crmUser.role);
-      setCustomers(data);
-    } catch (error) {
-      console.error("Error fetching customers:", error);
-      toast.error("Failed to load customers list");
-    } finally {
-      setLoading(false);
-    }
-  }, [crmUser]);
-
   useEffect(() => {
-    loadCustomers();
-  }, [loadCustomers]);
+    if (!crmUser) return;
+    setLoading(true);
+    const unsubscribe = subscribeToCustomers(crmUser.id, crmUser.role, (data) => {
+      setCustomers(data);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, [crmUser]);
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +56,7 @@ const CustomersPage = () => {
       return;
     }
 
+    setSubmitting(true);
     try {
       await createCustomer({
         name: formData.name,
@@ -83,10 +77,11 @@ const CustomersPage = () => {
       });
       setOpen(false);
       toast.success("Customer added successfully");
-      await loadCustomers();
     } catch (error) {
       console.error("Error adding customer:", error);
       toast.error("Failed to add customer");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -97,7 +92,6 @@ const CustomersPage = () => {
     try {
       await updateCustomerStatus(id, newStatus);
       toast.success(`Customer ${newStatus ? "disabled" : "enabled"} successfully`);
-      await loadCustomers();
     } catch (error) {
       console.error("Error updating customer status:", error);
       toast.error(`Failed to ${actionText} customer`);
@@ -183,8 +177,9 @@ const CustomersPage = () => {
                   placeholder="Enter department"
                 />
               </div>
-              <Button type="submit" className="w-full">
-                Add Customer
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                {submitting ? "Adding Customer..." : "Add Customer"}
               </Button>
             </form>
           </DialogContent>

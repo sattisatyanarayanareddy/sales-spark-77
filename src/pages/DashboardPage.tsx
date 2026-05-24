@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import StatCard from "../components/StatCard";
 import {
-  fetchAllUsers,
-  fetchSalesFunnel,
-  fetchNotificationsForManager,
+  subscribeToAllUsers,
+  subscribeToSalesFunnel,
+  subscribeToNotifications,
   approveQuotationDoc,
   rejectQuotationDoc,
 } from "../lib/firestore-service";
 import { CRMUser, SalesFunnel, SALES_FUNNEL_STATUS_COLORS, AppNotification } from "../types/crm";
-import { FileText, TrendingUp, Clock, CheckCircle2, Users, Check, X, ShieldAlert } from "lucide-react";
+import { FileText, TrendingUp, Clock, CheckCircle2, Users, Check, X, ShieldAlert, Loader2 } from "lucide-react";
 import { motion, Variants } from "framer-motion";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,44 +24,32 @@ const DashboardPage = () => {
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const loadData = async () => {
+  useEffect(() => {
     if (!crmUser) return;
 
     setLoading(true);
-    try {
-      if (crmUser.role === "administrator") {
-        const data = await fetchAllUsers();
-        setUsers(data);
-        setFunnels([]);
-      } else if (crmUser.role === "general_manager") {
-        const [allUsers, allFunnels] = await Promise.all([
-          fetchAllUsers(),
-          fetchSalesFunnel(crmUser.id, crmUser.role)
-        ]);
-        setUsers(allUsers);
-        setFunnels(allFunnels);
-      } else {
-        const [allFunnels, allUsers] = await Promise.all([
-          fetchSalesFunnel(crmUser.id, crmUser.role),
-          fetchAllUsers()
-        ]);
-        setFunnels(allFunnels);
-        setUsers(allUsers);
 
-        if (crmUser.role === "sub_manager") {
-          const notifs = await fetchNotificationsForManager(crmUser.id);
-          setNotifications(notifs);
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
+    const unsubUsers = subscribeToAllUsers((allUsers) => {
+      setUsers(allUsers);
+    });
+
+    const unsubFunnels = subscribeToSalesFunnel(crmUser.id, crmUser.role, (allFunnels) => {
+      setFunnels(crmUser.role === "administrator" ? [] : allFunnels);
       setLoading(false);
-    }
-  };
+    });
 
-  useEffect(() => {
-    loadData();
+    let unsubNotifs = () => {};
+    if (crmUser.role === "sub_manager") {
+      unsubNotifs = subscribeToNotifications(crmUser.id, (notifs) => {
+        setNotifications(notifs);
+      });
+    }
+
+    return () => {
+      unsubUsers();
+      unsubFunnels();
+      unsubNotifs();
+    };
   }, [crmUser]);
 
   const handleApprove = async (notificationId: string, quotationId: string) => {
@@ -69,7 +57,6 @@ const DashboardPage = () => {
     try {
       await approveQuotationDoc(notificationId, quotationId);
       toast.success("Quotation approved successfully!");
-      await loadData();
     } catch (e: any) {
       console.error(e);
       toast.error(e.message || "Failed to approve quotation");
@@ -83,7 +70,6 @@ const DashboardPage = () => {
     try {
       await rejectQuotationDoc(notificationId, quotationId);
       toast.success("Quotation rejected and marked as draft");
-      await loadData();
     } catch (e: any) {
       console.error(e);
       toast.error(e.message || "Failed to reject quotation");

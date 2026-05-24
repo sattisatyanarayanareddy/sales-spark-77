@@ -31,6 +31,7 @@ const LoginPage: React.FC = () => {
       navigate(from, { replace: true });
     } catch (err: any) {
       setError(err.message || "Login failed");
+      toast.error("ai failed");
     } finally {
       setLoading(false);
     }
