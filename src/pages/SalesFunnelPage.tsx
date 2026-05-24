@@ -28,7 +28,19 @@ const SalesFunnelPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [editFunnel, setEditFunnel] = useState<SalesFunnel | null>(null);
+  const [poValueStr, setPoValueStr] = useState("");
+  const [invoiceValueStr, setInvoiceValueStr] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (editFunnel) {
+      setPoValueStr(editFunnel.poValue ? String(editFunnel.poValue) : "");
+      setInvoiceValueStr(editFunnel.invoiceValue ? String(editFunnel.invoiceValue) : "");
+    } else {
+      setPoValueStr("");
+      setInvoiceValueStr("");
+    }
+  }, [editFunnel]);
 
   const loadData = async () => {
     if (!crmUser) return;
@@ -85,11 +97,13 @@ const SalesFunnelPage: React.FC = () => {
     if (!editFunnel) return;
     setSaving(true);
     try {
+      const parsedPo = parseFloat(poValueStr) || 0;
+      const parsedInv = parseFloat(invoiceValueStr) || 0;
       await updateSalesFunnelDoc(editFunnel.id, {
         status: editFunnel.status,
-        poValue: editFunnel.poValue,
+        poValue: parsedPo,
         deliveryStatus: editFunnel.deliveryStatus,
-        invoiceValue: editFunnel.invoiceValue,
+        invoiceValue: parsedInv,
         followUpDate: editFunnel.followUpDate,
       });
       toast.success("Sales funnel updated");
@@ -290,7 +304,7 @@ const SalesFunnelPage: React.FC = () => {
                 <>
                   <div className="space-y-2">
                     <Label>PO Value</Label>
-                    <Input type="number" value={editFunnel.poValue} onChange={(e) => setEditFunnel({ ...editFunnel, poValue: Number(e.target.value) })} />
+                    <Input type="text" value={poValueStr} onChange={(e) => setPoValueStr(e.target.value)} placeholder="0.00" />
                   </div>
                   <div className="space-y-2">
                     <Label>Delivery Status</Label>
@@ -306,7 +320,7 @@ const SalesFunnelPage: React.FC = () => {
                   {(editFunnel.deliveryStatus === "Partial Delivery" || editFunnel.deliveryStatus === "Delivered") && (
                     <div className="space-y-2">
                       <Label>Invoice Value</Label>
-                      <Input type="number" value={editFunnel.invoiceValue} onChange={(e) => setEditFunnel({ ...editFunnel, invoiceValue: Number(e.target.value) })} />
+                      <Input type="text" value={invoiceValueStr} onChange={(e) => setInvoiceValueStr(e.target.value)} placeholder="0.00" />
                     </div>
                   )}
                 </>

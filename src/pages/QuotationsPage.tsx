@@ -308,6 +308,9 @@ const QuotationsPage: React.FC = () => {
                 <div><span className="text-muted-foreground">Status:</span> <StageBadge stage={viewQuotation.status} /></div>
                 <div><span className="text-muted-foreground">PO Number:</span> {viewQuotation.poNumber || "—"}</div>
                 <div><span className="text-muted-foreground">Invoice:</span> {viewQuotation.invoiceValue ? formatCurrency(viewQuotation.invoiceValue) : "—"}</div>
+                <div><span className="text-muted-foreground">Sales Person:</span> {viewQuotation.salesPersonName}</div>
+                <div><span className="text-muted-foreground">Designation:</span> {viewQuotation.salesPersonDesignation || "—"}</div>
+                <div><span className="text-muted-foreground">From Company:</span> {viewQuotation.salesPersonCompany || "—"}</div>
               </div>
               <div>
                 <h4 className="font-semibold mb-2">Products</h4>
@@ -364,6 +367,20 @@ const QuotationsPage: React.FC = () => {
                 </Table>
                 <p className="text-right font-bold mt-2">Total: {formatCurrency(viewQuotation.totalValue)}</p>
               </div>
+
+              {viewQuotation.salesPersonSignature && (
+                <div className="mt-4 p-4 border rounded-lg bg-muted/20 flex flex-col items-end">
+                  <span className="text-xs text-muted-foreground mb-1 font-medium">Authorized Signature</span>
+                  <div className="w-40 h-16 bg-white border rounded flex items-center justify-center p-1 overflow-hidden">
+                    <img src={viewQuotation.salesPersonSignature} alt="Signature" className="max-h-full max-w-full object-contain" />
+                  </div>
+                  <span className="text-xs font-semibold mt-1 text-foreground">{viewQuotation.salesPersonName}</span>
+                  {viewQuotation.salesPersonDesignation && (
+                    <span className="text-[10px] text-muted-foreground">{viewQuotation.salesPersonDesignation}</span>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-2 pt-4 border-t">
                 <Button
                   onClick={handleDownloadPDF}

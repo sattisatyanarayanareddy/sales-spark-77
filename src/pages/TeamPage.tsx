@@ -410,6 +410,8 @@ const TeamPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("sales");
   const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -473,7 +475,7 @@ const TeamPage: React.FC = () => {
         finalManagerId = role === "general_manager" || role === "administrator" ? null : crmUser!.id;
       }
 
-      await createUser(email, password, name, role, department.trim().toLowerCase(), finalManagerId);
+      await createUser(email, password, name, role, department.trim().toLowerCase(), finalManagerId, designation, companyName);
       toast.success("Team member added!");
       setShowAddDialog(false);
       setName("");
@@ -485,6 +487,8 @@ const TeamPage: React.FC = () => {
       setShowPassword(false);
       setShowConfirmPassword(false);
       setManagerId(null);
+      setDesignation("");
+      setCompanyName("");
       await loadData();
     } catch (err: any) {
       console.error(err);
@@ -511,6 +515,8 @@ const TeamPage: React.FC = () => {
     setEmail(user.email);
     setRole(user.role);
     setDepartment(user.department);
+    setDesignation(user.designation || "");
+    setCompanyName(user.companyName || "");
     setManagerId(user.managerId);
     setShowEditDialog(true);
   };
@@ -524,7 +530,14 @@ const TeamPage: React.FC = () => {
       if (crmUser.role === "administrator") {
         finalManagerId = (role === "sub_manager" || role === "sales") ? managerId : null;
       }
-      await updateUserDoc(editingUser.id, { name, role, department: department.trim().toLowerCase(), managerId: finalManagerId });
+      await updateUserDoc(editingUser.id, { 
+        name, 
+        role, 
+        department: department.trim().toLowerCase(), 
+        managerId: finalManagerId,
+        designation,
+        companyName 
+      });
       toast.success("User updated successfully");
       setShowEditDialog(false);
       await loadData();
@@ -692,6 +705,14 @@ const TeamPage: React.FC = () => {
                 <Label htmlFor="department">Department *</Label>
                 <Input id="department" value={department} onChange={(e) => setDepartment(e.target.value)} required />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="designation">Designation</Label>
+                <Input id="designation" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Executive" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyName">Company Name</Label>
+                <Input id="companyName" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Corp" />
+              </div>
               <Button type="submit" className="w-full" disabled={submitting || !isPasswordValid || !passwordsMatch}>Add Member</Button>
             </form>
           </DialogContent>
@@ -715,6 +736,8 @@ const TeamPage: React.FC = () => {
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Department</TableHead>
+              <TableHead>Designation</TableHead>
+              <TableHead>Company</TableHead>
               <TableHead>Assigned With</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -740,6 +763,8 @@ const TeamPage: React.FC = () => {
                     <Badge variant="outline" className={`border-0 ${roleBadge[user.role]}`}>{roleLabel[user.role]}</Badge>
                   </TableCell>
                   <TableCell className="capitalize text-sm">{user.department || "—"}</TableCell>
+                  <TableCell className="text-sm">{user.designation || "—"}</TableCell>
+                  <TableCell className="text-sm">{user.companyName || "—"}</TableCell>
                   <TableCell className="text-sm">
                     {assignedTo ? (
                       <span className="flex items-center gap-1.5">
@@ -867,6 +892,26 @@ const TeamPage: React.FC = () => {
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-designation">Designation</Label>
+              <Input
+                id="edit-designation"
+                value={designation}
+                onChange={(e) => setDesignation(e.target.value)}
+                placeholder="e.g. Senior Executive"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-companyName">Company Name</Label>
+              <Input
+                id="edit-companyName"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="e.g. Acme Corp"
               />
             </div>
 

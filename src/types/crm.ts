@@ -11,6 +11,9 @@ export interface CRMUser {
   profilePicture?: string;
   phone?: string;
   address?: string;
+  signature?: string;
+  designation?: string;
+  companyName?: string;
   updatedAt?: string;
   disabled?: boolean;
 }
@@ -74,6 +77,9 @@ export interface Quotation {
   followUpDate: string | null;
   followUpNotes: string;
   deliveryStatus: "Pending" | "Partial Delivery" | "Delivered";
+  salesPersonSignature?: string;
+  salesPersonDesignation?: string;
+  salesPersonCompany?: string;
   createdAt: string;
   updatedAt: string;
   disabled?: boolean;

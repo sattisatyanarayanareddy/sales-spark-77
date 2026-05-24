@@ -20,7 +20,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
-  createUser: (email: string, password: string, name: string, role: UserRole, department: string, managerId: string | null) => Promise<void>;
+  createUser: (email: string, password: string, name: string, role: UserRole, department: string, managerId: string | null, designation?: string, companyName?: string) => Promise<void>;
   completeProfile: (name: string, role: UserRole, phone: string, address: string, department: string) => Promise<void>;
 }
 
@@ -93,7 +93,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     name: string,
     role: UserRole,
     department: string,
-    managerId: string | null
+    managerId: string | null,
+    designation?: string,
+    companyName?: string
   ) => {
     if (!isFirebaseConfigured) {
       throw new Error("Firebase is not configured.");
@@ -109,6 +111,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role,
       department,
       managerId,
+      designation: designation || "",
+      companyName: companyName || "",
       createdAt: serverTimestamp(),
     });
     // Sign back in as the original user if they were logged in

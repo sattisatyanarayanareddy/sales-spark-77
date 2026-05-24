@@ -119,8 +119,13 @@ const CreateQuotationPage: React.FC = () => {
     }
   };
 
-  const handleRemoveProduct = (index: number) => {
+  const handleRemoveProduct = (index: number, productId: string) => {
     setSelectedProducts(selectedProducts.filter((_, i) => i !== index));
+    setTableQuantityStrings((prev) => {
+      const copy = { ...prev };
+      delete copy[productId];
+      return copy;
+    });
   };
 
   const handleUpdateQuantity = (index: number, rawValue: string) => {
@@ -131,19 +136,19 @@ const CreateQuotationPage: React.FC = () => {
     setSelectedProducts(updated);
   };
 
-  // String state for the bottom table quantity inputs to allow clearing
-  const [tableQuantityStrings, setTableQuantityStrings] = useState<Record<number, string>>({});
+  // String state for the bottom table quantity inputs to allow clearing, keyed by product.id
+  const [tableQuantityStrings, setTableQuantityStrings] = useState<Record<string, string>>({});
 
-  const handleTableQuantityChange = (index: number, rawValue: string) => {
-    setTableQuantityStrings((prev) => ({ ...prev, [index]: rawValue }));
+  const handleTableQuantityChange = (productId: string, rawValue: string) => {
+    setTableQuantityStrings((prev) => ({ ...prev, [productId]: rawValue }));
   };
 
-  const handleTableQuantityBlur = (index: number) => {
-    const raw = tableQuantityStrings[index] ?? String(selectedProducts[index]?.quantity ?? 1);
+  const handleTableQuantityBlur = (index: number, productId: string) => {
+    const raw = tableQuantityStrings[productId] ?? String(selectedProducts[index]?.quantity ?? 1);
     const num = parseInt(raw, 10);
     const clamped = isNaN(num) || num < 1 ? 1 : num;
     handleUpdateQuantity(index, String(clamped));
-    setTableQuantityStrings((prev) => ({ ...prev, [index]: String(clamped) }));
+    setTableQuantityStrings((prev) => ({ ...prev, [productId]: String(clamped) }));
   };
 
   const totalValue = selectedProducts.reduce((sum, item) => sum + (item.product.value * item.quantity), 0);
@@ -166,6 +171,9 @@ const CreateQuotationPage: React.FC = () => {
         subject,
         salesPersonId: crmUser.id,
         salesPersonName: crmUser.name,
+        salesPersonSignature: crmUser.signature || "",
+        salesPersonDesignation: crmUser.designation || "",
+        salesPersonCompany: crmUser.companyName || "",
         managerId: crmUser.managerId || "",
         products: selectedProducts.map(item => ({
           ...item.product,
@@ -457,9 +465,9 @@ const CreateQuotationPage: React.FC = () => {
                           <Input
                             type="text"
                             inputMode="numeric"
-                            value={tableQuantityStrings[idx] ?? String(item.quantity)}
-                            onChange={(e) => handleTableQuantityChange(idx, e.target.value.replace(/[^0-9]/g, ""))}
-                            onBlur={() => handleTableQuantityBlur(idx)}
+                            value={tableQuantityStrings[item.product.id] ?? String(item.quantity)}
+                            onChange={(e) => handleTableQuantityChange(item.product.id, e.target.value.replace(/[^0-9]/g, ""))}
+                            onBlur={() => handleTableQuantityBlur(idx, item.product.id)}
                             className="w-16 h-8 text-center"
                           />
                         </td>
@@ -470,7 +478,7 @@ const CreateQuotationPage: React.FC = () => {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleRemoveProduct(idx)}
+                            onClick={() => handleRemoveProduct(idx, item.product.id)}
                           >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>

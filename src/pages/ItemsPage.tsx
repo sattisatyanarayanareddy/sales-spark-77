@@ -60,7 +60,7 @@ const ItemsPage = () => {
       e.preventDefault();
       const val = formData.unit.trim();
       if (!val) return;
-      
+
       const existing = units.find(u => u.name.toLowerCase() === val.toLowerCase());
       if (!existing) {
         setIsAddingUnit(true);
@@ -653,7 +653,7 @@ const ItemsPage = () => {
               return (
                 <div
                   key={idx}
-                  className={`border border-border/80 rounded-xl p-5 hover:bg-card hover:shadow-md transition-all duration-300 bg-card/65 flex flex-col justify-between group ${isProductDisabled ? "opacity-60 bg-muted/10" : ""}`}
+                  className={`border border-border/80 rounded-xl p-3 hover:bg-card hover:shadow-md transition-all duration-300 bg-card/65 flex flex-col justify-between group ${isProductDisabled ? "opacity-60 bg-muted/10" : ""}`}
                 >
                   <div>
                     {product.imageUrl ? (

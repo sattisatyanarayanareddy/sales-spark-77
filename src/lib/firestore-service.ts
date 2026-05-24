@@ -78,6 +78,9 @@ const mapQuotation = (id: string, data: any): Quotation => ({
   followUpDate: data.followUpDate || null,
   followUpNotes: data.followUpNotes || "",
   deliveryStatus: data.deliveryStatus || "Pending",
+  salesPersonSignature: data.salesPersonSignature || "",
+  salesPersonDesignation: data.salesPersonDesignation || "",
+  salesPersonCompany: data.salesPersonCompany || "",
   createdAt: toDate(data.createdAt),
   updatedAt: toDate(data.updatedAt),
   disabled: !!data.disabled,
@@ -103,6 +106,9 @@ export async function fetchUserDoc(uid: string): Promise<CRMUser | null> {
     phone: d.phone || "",
     address: d.address || "",
     profilePicture: d.profilePicture || undefined,
+    signature: d.signature || "",
+    designation: d.designation || "",
+    companyName: d.companyName || "",
     updatedAt: toDate(d.updatedAt),
     disabled: !!d.disabled,
   };
@@ -125,6 +131,9 @@ export async function fetchAllUsers(): Promise<CRMUser[]> {
       phone: data.phone || "",
       address: data.address || "",
       profilePicture: data.profilePicture || undefined,
+      signature: data.signature || "",
+      designation: data.designation || "",
+      companyName: data.companyName || "",
       updatedAt: toDate(data.updatedAt),
       disabled: !!data.disabled,
     } as CRMUser;
@@ -148,6 +157,8 @@ export async function updateUserDoc(
     role: UserRole;
     department: string;
     managerId: string | null;
+    designation?: string;
+    companyName?: string;
   }
 ): Promise<void> {
   await updateDoc(doc(db, "users", userId), {
@@ -772,7 +783,9 @@ export async function exportQuotationToPDF(quotation: Quotation): Promise<void> 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 26px;">
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius: 10px; padding: 14px;">
         <h3 style="font-size: 11px; color: #64748b; text-transform: uppercase; margin: 0 0 8px 0; letter-spacing: .4px;">From</h3>
-        <p style="font-size: 15px; font-weight: 700; margin: 0; color:#0f172a;">SalesERP</p>
+        <p style="font-size: 15px; font-weight: 700; margin: 0; color:#0f172a;">${escapeHtml(quotation.salesPersonCompany || "SalesERP")}</p>
+        <p style="font-size: 13px; margin: 5px 0 0 0; color: #334155;"><strong>Name:</strong> ${escapeHtml(quotation.salesPersonName)}</p>
+        ${quotation.salesPersonDesignation ? `<p style="font-size: 12px; margin: 3px 0 0 0; color: #475569;"><strong>Designation:</strong> ${escapeHtml(quotation.salesPersonDesignation)}</p>` : ""}
       </div>
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius: 10px; padding: 14px;">
         <h3 style="font-size: 11px; color: #64748b; text-transform: uppercase; margin: 0 0 8px 0; letter-spacing: .4px;">Bill To</h3>
@@ -834,7 +847,19 @@ export async function exportQuotationToPDF(quotation: Quotation): Promise<void> 
       </p>
     </div>
 
-    <div style="margin-top: 34px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b;">
+    <div style="margin-top: 25px; display: flex; justify-content: flex-end; text-align: right;">
+      <div style="width: 250px; display: flex; flex-direction: column; align-items: flex-end;">
+        <p style="font-size: 11px; color: #64748b; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">Authorized Signature</p>
+        ${quotation.salesPersonSignature 
+          ? `<img crossorigin="anonymous" src="${escapeHtml(quotation.salesPersonSignature)}" alt="Signature" style="max-height: 55px; max-width: 180px; object-fit: contain; margin-bottom: 5px;"/>`
+          : `<div style="height: 55px; width: 150px; border-bottom: 1px dashed #cbd5e1; margin-bottom: 5px;"></div>`
+        }
+        <p style="font-size: 13px; font-weight: bold; color: #0f172a; margin: 2px 0 0 0;">${escapeHtml(quotation.salesPersonName)}</p>
+        <p style="font-size: 11px; color: #475569; margin: 1px 0 0 0;">${escapeHtml(quotation.salesPersonDesignation || "Sales Representative")}</p>
+      </div>
+    </div>
+
+    <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b;">
       <p style="margin: 0;">This quotation is valid for 30 days from the date of issue.</p>
       <p style="margin: 5px 0 0 0;">Thank you for your business!</p>
     </div>
