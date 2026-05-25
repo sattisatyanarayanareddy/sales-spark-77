@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Trash2, Plus, Check, ChevronsUpDown } from "lucide-react";
+import { Trash2, Plus, Check, ChevronsUpDown, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -161,6 +161,13 @@ const CreateQuotationPage: React.FC = () => {
       return;
     }
 
+    // Check if user has a signature set
+    if (!crmUser.signature) {
+      toast.error("Please add your signature in your profile before creating quotations");
+      navigate("/profile");
+      return;
+    }
+
     setSubmitting(true);
     try {
       await createQuotationDoc({
@@ -171,7 +178,7 @@ const CreateQuotationPage: React.FC = () => {
         subject,
         salesPersonId: crmUser.id,
         salesPersonName: crmUser.name,
-        salesPersonSignature: crmUser.signature || "",
+        salesPersonSignature: crmUser.signature,
         salesPersonDesignation: crmUser.designation || "",
         salesPersonCompany: crmUser.companyName || "",
         managerId: crmUser.managerId || "",
@@ -211,6 +218,28 @@ const CreateQuotationPage: React.FC = () => {
   return (
     <div className="page-container max-w-2xl">
       <h2 className="section-title mb-6">Create New Quotation</h2>
+
+      {!crmUser.signature && (
+        <Card className="p-4 mb-6 border-amber-200 bg-amber-50">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-900">Signature Required</p>
+              <p className="text-sm text-amber-800 mt-1">
+                Please add your signature in your profile before creating quotations. This will be included in all quotation documents.
+              </p>
+              <Button 
+                type="button"
+                size="sm"
+                onClick={() => navigate("/profile")}
+                className="mt-3 bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                Add Signature
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Customer Selection */}

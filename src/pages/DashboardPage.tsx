@@ -23,6 +23,7 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showAllManagers, setShowAllManagers] = useState(false);
 
   useEffect(() => {
     if (!crmUser) return;
@@ -105,8 +106,9 @@ const DashboardPage = () => {
 
   // General Manager role specific filters
   const isGM = crmUser.role === "general_manager";
-  const managers = users.filter((u) => u.role === "sub_manager" && u.managerId === crmUser.id);
-  const visibleManagers = managers.length > 0 ? managers : users.filter((u) => u.role === "sub_manager");
+  // Show ALL department managers for GM, not just assigned ones
+  const managers = users.filter((u) => u.role === "sub_manager");
+  const visibleManagers = managers.length > 0 ? managers : [];
   const activeManager = selectedManagerId ? visibleManagers.find((m) => m.id === selectedManagerId) : null;
 
   // Filter funnels based on selected manager
@@ -165,19 +167,19 @@ const DashboardPage = () => {
       animate="show"
       className="page-container space-y-6"
     >
-      <motion.div variants={itemVariants} className="dashboard-hero flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <motion.div variants={itemVariants} className="dashboard-hero flex flex-col md:flex-row md:items-center md:justify-between gap-6 p-6 rounded-2xl bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent border border-border/40">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">Dashboard</h1>
+          <p className="text-muted-foreground mt-2 text-lg">
             Welcome back, {crmUser?.name || "User"}
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
+        <div className="text-sm text-muted-foreground p-4 rounded-xl bg-card/60 border border-border/30 backdrop-blur-sm">
           {crmUser?.role === "administrator" 
             ? "Overview of registered users and recent activity" 
             : activeManager 
-              ? `Filtered by Manager: ${activeManager.name}` 
-              : "Updated live from your sales data"}
+              ? `📊 Filtered by Manager: ${activeManager.name}` 
+              : "📈 Updated live from your sales data"}
         </div>
       </motion.div>
 
@@ -199,16 +201,19 @@ const DashboardPage = () => {
           </div>
           
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleManagers.map((m) => {
+            {(showAllManagers ? visibleManagers : visibleManagers.slice(0, 3)).map((m) => {
               const stats = getManagerTeamStats(m.id);
               const isSelected = selectedManagerId === m.id;
               return (
-                <div
+                <motion.div
                   key={m.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.2 }}
                   onClick={() => setSelectedManagerId(isSelected ? null : m.id)}
                   className={`cursor-pointer p-5 rounded-2xl border transition-all duration-300 ${
                     isSelected
-                      ? "border-primary bg-primary/5 shadow-md shadow-primary/5 ring-1 ring-primary"
+                      ? "border-primary bg-gradient-to-br from-primary/10 via-primary/5 to-transparent shadow-lg shadow-primary/20 ring-1 ring-primary"
                       : "border-border/65 bg-card hover:border-primary/50 hover:shadow-lg hover:shadow-muted/20"
                   }`}
                 >
@@ -224,29 +229,42 @@ const DashboardPage = () => {
                   
                   <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-border/40 text-xs">
                     <div>
-                      <p className="text-muted-foreground">Quotation Value</p>
-                      <p className="font-bold text-sm text-foreground">${stats.quotationValue.toLocaleString()}</p>
+                      <p className="text-muted-foreground/80 text-[11px]">Quotation Value</p>
+                      <p className="font-bold text-sm text-foreground mt-1">${stats.quotationValue.toLocaleString()}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Active Deals</p>
-                      <p className="font-bold text-sm text-foreground">{stats.activeDeals}</p>
+                      <p className="text-muted-foreground/80 text-[11px]">Active Deals</p>
+                      <p className="font-bold text-sm text-foreground mt-1">{stats.activeDeals}</p>
                     </div>
                     <div className="mt-2">
-                      <p className="text-muted-foreground">PO Value</p>
-                      <p className="font-bold text-sm text-foreground">${stats.poValue.toLocaleString()}</p>
+                      <p className="text-muted-foreground/80 text-[11px]">PO Value</p>
+                      <p className="font-bold text-sm text-amber-600 mt-1">${stats.poValue.toLocaleString()}</p>
                     </div>
                     <div className="mt-2">
-                      <p className="text-muted-foreground">Won Deals</p>
-                      <p className="font-bold text-sm text-success">{stats.wonDeals}</p>
+                      <p className="text-muted-foreground/80 text-[11px]">Won Deals</p>
+                      <p className="font-bold text-sm text-green-600 mt-1">{stats.wonDeals}</p>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
             {visibleManagers.length === 0 && (
-              <p className="text-muted-foreground text-sm py-4">No managers assigned to your team yet.</p>
+              <p className="text-muted-foreground text-sm py-4 col-span-full">No managers assigned to your team yet.</p>
             )}
           </div>
+
+          {/* See More / Show Less Button */}
+          {visibleManagers.length > 3 && (
+            <div className="flex justify-center pt-2">
+              <Button
+                onClick={() => setShowAllManagers(!showAllManagers)}
+                variant="outline"
+                className="rounded-xl border-primary/30 text-primary hover:bg-primary/5 font-medium"
+              >
+                {showAllManagers ? "Show Less" : `See More (${visibleManagers.length - 3} more)`}
+              </Button>
+            </div>
+          )}
         </motion.div>
       )}
 

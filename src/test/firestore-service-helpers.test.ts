@@ -4,6 +4,8 @@ import { toNonNegativeNumber, validateValueHierarchy } from "@/lib/firestore-ser
 describe("firestore service validation helpers", () => {
   it("coerces numeric inputs and rejects negative values", () => {
     expect(toNonNegativeNumber("1000", "Quotation value")).toBe(1000);
+    expect(toNonNegativeNumber("1000.4", "Quotation value")).toBe(1000);
+    expect(toNonNegativeNumber(1250.7, "PO value")).toBe(1251);
     expect(toNonNegativeNumber(undefined, "PO value")).toBe(0);
     expect(() => toNonNegativeNumber(-5, "Invoice value")).toThrow("Invoice value must be greater than or equal to 0");
   });

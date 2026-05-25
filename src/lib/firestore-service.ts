@@ -74,7 +74,7 @@ export function toNonNegativeNumber(value: unknown, label: string): number {
     throw new Error(`${label} must be greater than or equal to 0`);
   }
 
-  return numericValue;
+  return Math.round(numericValue);
 }
 
 export function validateValueHierarchy(totalValue: number, poValue: number, invoiceValue: number): void {

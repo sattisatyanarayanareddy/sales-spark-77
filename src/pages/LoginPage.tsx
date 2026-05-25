@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { BarChart3, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { BarChart3, AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -24,14 +24,19 @@ const LoginPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email || !password) {
+      setError("Please enter both email and password");
+      return;
+    }
     setError("");
     setLoading(true);
     try {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err: any) {
-      setError(err.message || "Login failed");
-      toast.error("ai failed");
+      const errorMsg = err.message || "Login failed. Please check your credentials and try again.";
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -70,10 +75,10 @@ const LoginPage: React.FC = () => {
           <p className="text-muted-foreground mt-1">Sign in to your account</p>
         </div>
 
-        <Card className="p-6 shadow-lg border-border/50">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <Card className="p-8 shadow-2xl border-border/60 bg-card/98 backdrop-blur-sm">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-sm font-semibold text-foreground">Email Address</Label>
               <Input
                 id="email"
                 type="email"
@@ -81,10 +86,11 @@ const LoginPage: React.FC = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 required
+                className="rounded-xl h-11 bg-muted/30 border-border/40 focus:border-primary/60 focus:ring-primary/20"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-sm font-semibold text-foreground">Password</Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -93,36 +99,39 @@ const LoginPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
+                  className="rounded-xl h-11 pr-11 bg-muted/30 border-border/40 focus:border-primary/60 focus:ring-primary/20"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 text-destructive text-sm">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{error}</span>
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/30 animate-in fade-in slide-in-from-top-2 duration-300">
+                <AlertCircle className="w-5 h-5 shrink-0 text-destructive mt-0.5" />
+                <span className="text-sm text-destructive font-medium">{error}</span>
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-semibold rounded-xl transition-all duration-200" disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {loading ? "Signing in..." : "Sign In"}
             </Button>
 
             <Button
               type="button"
               variant="ghost"
-              className="w-full"
+              className="w-full h-11 text-primary font-medium hover:bg-primary/10 rounded-xl transition-all"
               onClick={handleForgotPassword}
               disabled={resetLoading}
             >
+              {resetLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {resetLoading ? "Sending reset link..." : "Forgot password?"}
             </Button>
           </form>

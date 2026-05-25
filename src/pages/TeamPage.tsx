@@ -491,7 +491,8 @@ const TeamPage: React.FC = () => {
       if (crmUser.role === "administrator") {
         filtered = allUsers.filter((u) => u.id !== crmUser.id);
       } else if (crmUser.role === "general_manager") {
-        filtered = allUsers.filter((u) => u.role === "sub_manager" && u.managerId === crmUser.id);
+        // Show all managers (sub_managers) in the system for General Manager
+        filtered = allUsers.filter((u) => u.role === "sub_manager");
       } else {
         filtered = allUsers.filter((u) => u.managerId === crmUser.id);
       }
@@ -556,7 +557,7 @@ const TeamPage: React.FC = () => {
     }
   };
 
-  const pageTitle = crmUser?.role === "administrator" ? "Users" : "Team Management";
+  const pageTitle = crmUser?.role === "administrator" ? "Users" : crmUser?.role === "general_manager" ? "Managers" : "Team Management";
   const canAddUsers = crmUser?.role === "administrator";
   const addButtonLabel = "Add User";
   const addDialogTitle = "Add User";
@@ -644,8 +645,8 @@ const TeamPage: React.FC = () => {
   };
 
   const activeMembersCount = teamUsers.filter((u) => !u.disabled).length;
-  const managersCount = teamUsers.filter((u) => u.role === "sub_manager").length;
-  const salesCount = teamUsers.filter((u) => u.role === "sales").length;
+  const managersCount = crmUser?.role === "general_manager" ? teamUsers.filter((u) => u.role === "sub_manager").length : teamUsers.filter((u) => u.role === "sub_manager").length;
+  const salesCount = crmUser?.role === "general_manager" ? 0 : teamUsers.filter((u) => u.role === "sales").length;
   const uniqueDeptsCount = Array.from(
     new Set(teamUsers.map((u) => u.department?.toLowerCase()).filter(Boolean))
   ).length;
@@ -835,7 +836,7 @@ const TeamPage: React.FC = () => {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={`grid grid-cols-1 gap-4 ${crmUser?.role === "general_manager" ? "sm:grid-cols-2 lg:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -864,7 +865,7 @@ const TeamPage: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Managers</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{crmUser?.role === "general_manager" ? "Managers" : "Managers"}</p>
               <h3 className="text-3xl font-extrabold mt-1 text-foreground">{managersCount}</h3>
             </div>
             <div className="p-3 rounded-2xl bg-violet-500/10 text-violet-500">
@@ -872,29 +873,31 @@ const TeamPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-3 flex items-center text-xs text-muted-foreground">
-            Directing team departments
+            {crmUser?.role === "general_manager" ? "Your team managers" : "Directing team departments"}
           </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-          className="stat-card"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Salespeople</p>
-              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{salesCount}</h3>
+        {crmUser?.role !== "general_manager" && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+            className="stat-card"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Salespeople</p>
+                <h3 className="text-3xl font-extrabold mt-1 text-foreground">{salesCount}</h3>
+              </div>
+              <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-500">
+                <UserCheck className="w-5 h-5" />
+              </div>
             </div>
-            <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-500">
-              <UserCheck className="w-5 h-5" />
+            <div className="mt-3 flex items-center text-xs text-muted-foreground">
+              Driving active lead funnels
             </div>
-          </div>
-          <div className="mt-3 flex items-center text-xs text-muted-foreground">
-            Driving active lead funnels
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 15 }}
@@ -926,65 +929,67 @@ const TeamPage: React.FC = () => {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-lg hover:shadow-xl transition-shadow duration-300">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Designation</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Assigned With</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+            <TableRow className="bg-gradient-to-r from-primary/5 via-violet-500/5 to-transparent hover:bg-gradient-to-r hover:from-primary/8 hover:via-violet-500/8 hover:to-transparent transition-colors border-b border-border/60">
+              <TableHead className="font-semibold text-foreground/90">Name</TableHead>
+              <TableHead className="font-semibold text-foreground/90">Email</TableHead>
+              <TableHead className="font-semibold text-foreground/90">Role</TableHead>
+              <TableHead className="font-semibold text-foreground/90">Department</TableHead>
+              <TableHead className="font-semibold text-foreground/90">Designation</TableHead>
+              <TableHead className="font-semibold text-foreground/90">Company</TableHead>
+              <TableHead className="font-semibold text-foreground/90">Assigned With</TableHead>
+              <TableHead className="text-right font-semibold text-foreground/90">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredUsers.map((user) => {
+            {filteredUsers.map((user, idx) => {
               // Find the manager/GM this user is assigned to
               const assignedTo = user.managerId
                 ? teamUsers.find((u) => u.id === user.managerId)
                 : null;
               return (
-                <TableRow key={user.id} className={user.disabled ? "opacity-60 bg-muted/10" : ""}>
-                  <TableCell className="font-medium">
+                <TableRow key={user.id} className={`border-b border-border/40 transition-all duration-200 ${user.disabled ? "opacity-50 bg-muted/30" : idx % 2 === 0 ? "hover:bg-muted/40" : "hover:bg-primary/5"}`}>
+                  <TableCell className="font-semibold text-foreground/95 py-3.5">
                     {user.role === "sales" && crmUser.role !== "administrator" ? (
-                      <button onClick={() => setSelectedSalesperson(user)} className="text-primary hover:underline font-semibold">{user.name}</button>
-                    ) : user.name}
+                      <button onClick={() => setSelectedSalesperson(user)} className="text-primary hover:text-primary/80 hover:underline font-bold transition-colors">{user.name}</button>
+                    ) : <span className="font-semibold">{user.name}</span>}
                     {user.disabled && (
-                      <Badge variant="outline" className="ml-2 text-[10px] py-0 px-1.5 h-5 bg-destructive/10 text-destructive border-destructive/20">Disabled</Badge>
+                      <Badge variant="outline" className="ml-2 text-[10px] py-0.5 px-2 h-auto bg-destructive/10 text-destructive border-destructive/30 font-medium">Disabled</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`border-0 ${roleBadge[user.role]}`}>{roleLabel[user.role]}</Badge>
+                  <TableCell className="text-muted-foreground text-sm py-3.5 font-medium">{user.email}</TableCell>
+                  <TableCell className="py-3.5">
+                    <Badge variant="outline" className={`border-0 text-xs font-semibold px-3 py-1 ${roleBadge[user.role]}`}>{roleLabel[user.role]}</Badge>
                   </TableCell>
-                  <TableCell className="capitalize text-sm">{user.department || "—"}</TableCell>
-                  <TableCell className="text-sm">{user.designation || "—"}</TableCell>
-                  <TableCell className="text-sm">{user.companyName || "—"}</TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="capitalize text-sm font-medium text-foreground/80 py-3.5">{user.department ? user.department.charAt(0).toUpperCase() + user.department.slice(1) : "—"}</TableCell>
+                  <TableCell className="text-sm text-foreground/75 py-3.5">{user.designation || "—"}</TableCell>
+                  <TableCell className="text-sm text-foreground/75 py-3.5">{user.companyName || "—"}</TableCell>
+                  <TableCell className="text-sm py-3.5">
                     {assignedTo ? (
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold inline-flex items-center justify-center shrink-0">
+                      <span className="flex items-center gap-2 p-2 rounded-lg bg-primary/8 border border-primary/20 w-fit">
+                        <span className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-violet-500 text-white text-[11px] font-bold inline-flex items-center justify-center shrink-0 shadow-sm">
                           {assignedTo.name.charAt(0).toUpperCase()}
                         </span>
-                        <span className="text-foreground font-medium">{assignedTo.name}</span>
-                        <span className="text-muted-foreground text-xs">({roleLabel[assignedTo.role]})</span>
+                        <div className="flex flex-col gap-0">
+                          <span className="text-foreground font-semibold text-xs">{assignedTo.name}</span>
+                          <span className="text-muted-foreground text-[11px]">{roleLabel[assignedTo.role]}</span>
+                        </div>
                       </span>
                     ) : (
-                      <span className="text-muted-foreground text-xs italic">—</span>
+                      <span className="text-muted-foreground/60 text-xs italic font-medium">Unassigned</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="action-btn" onClick={() => openEditUser(user)} disabled={user.disabled} title={user.disabled ? "Cannot edit disabled user" : "Edit"}>
+                  <TableCell className="text-right py-3.5">
+                    <div className="inline-flex items-center gap-1.5">
+                      <Button variant="ghost" size="icon" className="action-btn h-8 w-8 hover:bg-primary/10 hover:text-primary transition-all" onClick={() => openEditUser(user)} disabled={user.disabled} title={user.disabled ? "Cannot edit disabled user" : "Edit user"}>
                         <Pencil className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={user.disabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
+                        className={`h-8 w-8 transition-all ${user.disabled ? "text-green-600 hover:bg-green-500/10 hover:text-green-700" : "text-amber-600 hover:bg-amber-500/10 hover:text-amber-700"}`}
                         onClick={() => handleToggleStatus(user)}
                         title={user.disabled ? "Enable User" : "Disable User"}
                       >
@@ -997,7 +1002,7 @@ const TeamPage: React.FC = () => {
             })}
             {filteredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No team members found</TableCell>
+                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground font-medium">No team members found matching your search</TableCell>
               </TableRow>
             )}
           </TableBody>

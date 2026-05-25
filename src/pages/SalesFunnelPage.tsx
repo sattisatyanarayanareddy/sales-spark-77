@@ -30,17 +30,57 @@ const SalesFunnelPage: React.FC = () => {
   const [editFunnel, setEditFunnel] = useState<SalesFunnel | null>(null);
   const [poValueStr, setPoValueStr] = useState("");
   const [invoiceValueStr, setInvoiceValueStr] = useState("");
+  const [validationError, setValidationError] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (editFunnel) {
-      setPoValueStr(editFunnel.poValue ? String(editFunnel.poValue) : "");
-      setInvoiceValueStr(editFunnel.invoiceValue ? String(editFunnel.invoiceValue) : "");
+      setPoValueStr(editFunnel.poValue ? String(Math.round(editFunnel.poValue)) : "");
+      setInvoiceValueStr(editFunnel.invoiceValue ? String(Math.round(editFunnel.invoiceValue)) : "");
+      setValidationError("");
     } else {
       setPoValueStr("");
       setInvoiceValueStr("");
+      setValidationError("");
     }
-  }, [editFunnel]);
+  }, [editFunnel?.id]);
+
+  useEffect(() => {
+    if (!editFunnel) {
+      setValidationError("");
+      return;
+    }
+
+    const parsedPo = Math.round(parseFloat(poValueStr) || 0);
+    const parsedInv = Math.round(parseFloat(invoiceValueStr) || 0);
+    const quotationValue = Math.round(editFunnel.quotationValue);
+
+    if (editFunnel.status === "Won") {
+      if (parsedPo > quotationValue) {
+        setValidationError(`PO Value ($${parsedPo.toLocaleString()}) cannot exceed Quotation Value ($${quotationValue.toLocaleString()})`);
+        return;
+      }
+
+      const hasInvoiceInput = editFunnel.deliveryStatus === "Partial Delivery" || editFunnel.deliveryStatus === "Delivered";
+      if (hasInvoiceInput && parsedInv > parsedPo) {
+        setValidationError(`Invoice Value ($${parsedInv.toLocaleString()}) cannot exceed PO Value ($${parsedPo.toLocaleString()})`);
+        return;
+      }
+
+      if (parsedPo === 0) {
+        setValidationError("PO Value should be greater than 0 for Won deals");
+        return;
+      }
+    }
+
+    const requiresFollowUpDate = !["Closed", "Cancelled", "Lost"].includes(editFunnel.status);
+    if (requiresFollowUpDate && !editFunnel.followUpDate) {
+      setValidationError("Follow-up date is required");
+      return;
+    }
+
+    setValidationError("");
+  }, [poValueStr, invoiceValueStr, editFunnel?.status, editFunnel?.deliveryStatus, editFunnel?.followUpDate, editFunnel?.quotationValue]);
 
   useEffect(() => {
     if (!crmUser) return;
@@ -95,14 +135,34 @@ const SalesFunnelPage: React.FC = () => {
     const requiresFollowUpDate = !["Closed", "Cancelled", "Lost"].includes(editFunnel.status);
 
     if (requiresFollowUpDate && !editFunnel.followUpDate) {
-      toast.error("Follow-up date is required");
+      setValidationError("Follow-up date is required");
+      return;
+    }
+
+    // Parse and round to integers
+    const parsedPo = Math.round(parseFloat(poValueStr) || 0);
+    const parsedInv = Math.round(parseFloat(invoiceValueStr) || 0);
+    const quotationValue = Math.round(editFunnel.quotationValue);
+
+    // Validation: Invoice <= PO <= Quotation
+    if (parsedPo > quotationValue) {
+      setValidationError(`PO Value ($${parsedPo.toLocaleString()}) cannot exceed Quotation Value ($${quotationValue.toLocaleString()})`);
+      return;
+    }
+
+    if (parsedInv > parsedPo) {
+      setValidationError(`Invoice Value ($${parsedInv.toLocaleString()}) cannot exceed PO Value ($${parsedPo.toLocaleString()})`);
+      return;
+    }
+
+    // Warn but allow if values seem off (in case of intentional adjustments)
+    if (editFunnel.status === "Won" && parsedPo === 0) {
+      setValidationError("PO Value should be greater than 0 for Won deals");
       return;
     }
 
     setSaving(true);
     try {
-      const parsedPo = parseFloat(poValueStr) || 0;
-      const parsedInv = parseFloat(invoiceValueStr) || 0;
       await updateSalesFunnelDoc(editFunnel.id, {
         status: editFunnel.status,
         poValue: parsedPo,
@@ -110,10 +170,11 @@ const SalesFunnelPage: React.FC = () => {
         invoiceValue: parsedInv,
         followUpDate: requiresFollowUpDate ? editFunnel.followUpDate : null,
       });
-      toast.success("Sales funnel updated");
+      toast.success("Sales funnel updated successfully!");
       setEditFunnel(null);
     } catch (e) {
-      toast.error("Failed to update");
+      console.error(e);
+      toast.error("Failed to update sales funnel");
     } finally {
       setSaving(false);
     }
@@ -286,12 +347,18 @@ const SalesFunnelPage: React.FC = () => {
 
       {/* Edit Dialog */}
       <Dialog open={!!editFunnel} onOpenChange={() => setEditFunnel(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Update Sales Funnel</DialogTitle>
           </DialogHeader>
           {editFunnel && (
             <div className="space-y-4">
+              {/* Display Quotation Value for reference */}
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <p className="text-xs text-muted-foreground">Quotation Value (Reference)</p>
+                <p className="text-lg font-bold text-foreground">${Math.round(editFunnel.quotationValue).toLocaleString()}</p>
+              </div>
+
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select
@@ -314,15 +381,40 @@ const SalesFunnelPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+
               {editFunnel.status === "Won" && (
                 <>
                   <div className="space-y-2">
-                    <Label>PO Value</Label>
-                    <Input type="text" value={poValueStr} onChange={(e) => setPoValueStr(e.target.value)} placeholder="0.00" />
+                    <Label className="flex items-center justify-between">
+                      <span>PO Value (≤ ${Math.round(editFunnel.quotationValue).toLocaleString()})</span>
+                      <span className="text-xs text-muted-foreground font-normal">Integer only</span>
+                    </Label>
+                    <Input 
+                      type="number" 
+                      value={poValueStr} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "" || /^\d+$/.test(val)) {
+                          setPoValueStr(val);
+                        } else {
+                          const num = parseFloat(val);
+                          if (!isNaN(num)) {
+                            setPoValueStr(String(Math.round(num)));
+                          }
+                        }
+                      }} 
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      className="rounded-xl"
+                    />
                   </div>
+
                   <div className="space-y-2">
                     <Label>Delivery Status</Label>
-                    <Select value={editFunnel.deliveryStatus} onValueChange={(v) => setEditFunnel({ ...editFunnel, deliveryStatus: v as "Pending" | "Partial Delivery" | "Delivered" })}>
+                    <Select value={editFunnel.deliveryStatus} onValueChange={(v) => {
+                      setEditFunnel({ ...editFunnel, deliveryStatus: v as "Pending" | "Partial Delivery" | "Delivered" });
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Pending">Pending</SelectItem>
@@ -331,14 +423,57 @@ const SalesFunnelPage: React.FC = () => {
                       </SelectContent>
                     </Select>
                   </div>
+
                   {(editFunnel.deliveryStatus === "Partial Delivery" || editFunnel.deliveryStatus === "Delivered") && (
                     <div className="space-y-2">
-                      <Label>Invoice Value</Label>
-                      <Input type="text" value={invoiceValueStr} onChange={(e) => setInvoiceValueStr(e.target.value)} placeholder="0.00" />
+                      <Label className="flex items-center justify-between">
+                        <span>Invoice Value (≤ ${poValueStr || "0"})</span>
+                        <span className="text-xs text-muted-foreground font-normal">Integer only</span>
+                      </Label>
+                      <Input 
+                        type="number" 
+                        value={invoiceValueStr} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "" || /^\d+$/.test(val)) {
+                            setInvoiceValueStr(val);
+                          } else {
+                            const num = parseFloat(val);
+                            if (!isNaN(num)) {
+                              setInvoiceValueStr(String(Math.round(num)));
+                            }
+                          }
+                        }} 
+                        placeholder="0"
+                        min="0"
+                        step="1"
+                        className="rounded-xl"
+                      />
                     </div>
                   )}
                 </>
               )}
+
+              {/* Validation Hierarchy Info */}
+              {editFunnel.status === "Won" && (
+                <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                  <p className="text-xs font-semibold text-blue-900 mb-2">Value Hierarchy:</p>
+                  <div className="space-y-1 text-xs text-blue-800">
+                    <p>✓ Quotation: ${Math.round(editFunnel.quotationValue).toLocaleString()}</p>
+                    <p>↓ PO Value: {poValueStr ? `$${parseInt(poValueStr).toLocaleString()}` : "$0"} (max: ${Math.round(editFunnel.quotationValue).toLocaleString()})</p>
+                    <p>↓ Invoice: {invoiceValueStr ? `$${parseInt(invoiceValueStr).toLocaleString()}` : "$0"} (max: {poValueStr ? `$${parseInt(poValueStr).toLocaleString()}` : "$0"})</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Validation Error */}
+              {validationError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex gap-2">
+                  <span className="text-red-600 text-xs font-semibold flex-shrink-0">⚠</span>
+                  <p className="text-xs text-red-800">{validationError}</p>
+                </div>
+              )}
+
               {!["Closed", "Cancelled", "Lost"].includes(editFunnel.status) && (
                 <div className="space-y-2">
                   <Label>Follow-up Date *</Label>
@@ -347,13 +482,15 @@ const SalesFunnelPage: React.FC = () => {
                     required
                     value={editFunnel.followUpDate || ""}
                     onChange={(e) => setEditFunnel({ ...editFunnel, followUpDate: e.target.value })}
+                    className="rounded-xl"
                   />
                 </div>
               )}
+
               <Button
                 onClick={saveUpdate}
-                className="w-full"
-                disabled={saving || (!["Closed", "Cancelled", "Lost"].includes(editFunnel.status) && !editFunnel.followUpDate)}
+                className="w-full rounded-xl h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-medium"
+                disabled={saving || (!["Closed", "Cancelled", "Lost"].includes(editFunnel.status) && !editFunnel.followUpDate) || !!validationError}
               >
                 {saving ? "Saving..." : "Save Changes"}
               </Button>
