@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  fetchQuotations,
   updateQuotationDoc,
   updateQuotationStatus,
   exportToCSV,
@@ -8,8 +9,8 @@ import {
   createSalesFunnelDoc,
   fetchSalesFunnelByQuotationId,
   requestQuotationApproval,
-  subscribeToQuotations,
 } from "@/lib/firestore-service";
+import { getQuotationStatusForApprovalRequest } from "@/lib/quotation-status";
 import { Quotation, QuotationStatus, STATUS_LABELS } from "@/types/crm";
 import StageBadge from "@/components/StageBadge";
 import { Badge } from "@/components/ui/badge";
@@ -34,21 +35,35 @@ const QuotationsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [editQuotation, setEditQuotation] = useState<Quotation | null>(null);
+  const [editStatusDraft, setEditStatusDraft] = useState<QuotationStatus | null>(null);
+  const [editStatusDirty, setEditStatusDirty] = useState(false);
   const [viewQuotation, setViewQuotation] = useState<Quotation | null>(null);
   const [saving, setSaving] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
-  useEffect(() => {
+  const loadData = async () => {
     if (!crmUser) return;
     setLoadingData(true);
-    const unsubscribe = subscribeToQuotations(crmUser.id, crmUser.role, (qs) => {
+    try {
+      const qs = await fetchQuotations(crmUser.id, crmUser.role);
       setQuotations(qs);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load quotations");
+    } finally {
       setLoadingData(false);
-    });
-    return unsubscribe;
+    }
+  };
+
+  useEffect(() => {
+    loadData();
   }, [crmUser]);
 
   if (!crmUser) return null;
+
+  const editableStatusOptions = Object.entries(STATUS_LABELS).filter(
+    ([status]) => status !== "Approval Pending"
+  ) as [QuotationStatus, string][];
 
   const filtered = quotations.filter((q) => {
     if (statusFilter !== "all" && q.status !== statusFilter) return false;
@@ -64,6 +79,14 @@ const QuotationsPage: React.FC = () => {
     return true;
   });
 
+  const openEditQuotation = (quotation: Quotation) => {
+    setEditQuotation({ ...quotation });
+    setEditStatusDirty(false);
+    setEditStatusDraft(quotation.status === "Approval Pending" ? "Created" : quotation.status);
+  };
+
+  const isStatusChangeLocked = editQuotation?.status === "Approval Pending";
+
   const handleToggleStatus = async (id: string, currentDisabled: boolean) => {
     const newStatus = !currentDisabled;
     const actionText = newStatus ? "disable" : "enable";
@@ -71,6 +94,7 @@ const QuotationsPage: React.FC = () => {
     try {
       await updateQuotationStatus(id, newStatus);
       toast.success(`Quotation ${newStatus ? "disabled" : "enabled"} successfully`);
+      loadData();
     } catch (e) {
       console.error(e);
       toast.error(`Failed to ${actionText} quotation`);
@@ -82,14 +106,14 @@ const QuotationsPage: React.FC = () => {
     setSaving(true);
     try {
       const original = quotations.find((q) => q.id === editQuotation.id);
+      const statusToSave = editStatusDirty && editStatusDraft ? editStatusDraft : editQuotation.status;
       const isSalesperson = crmUser.role === "sales";
       const wasNotSent = original ? original.status !== "Sent" : true;
-      const isTryingToSend = editQuotation.status === "Sent";
+      const isTryingToSend = statusToSave === "Sent";
 
       if (isSalesperson && wasNotSent && isTryingToSend) {
-        const originalStatus = original ? original.status : "Created";
         await updateQuotationDoc(editQuotation.id, {
-          status: originalStatus,
+          status: getQuotationStatusForApprovalRequest(statusToSave),
           poNumber: editQuotation.poNumber,
           poValue: editQuotation.poValue,
           invoiceValue: editQuotation.invoiceValue,
@@ -98,11 +122,14 @@ const QuotationsPage: React.FC = () => {
           deliveryStatus: editQuotation.deliveryStatus,
         });
 
-        await requestQuotationApproval(editQuotation);
-        toast.success("Status update to 'Sent' submitted for manager approval");
+        await requestQuotationApproval({
+          ...editQuotation,
+          status: getQuotationStatusForApprovalRequest(statusToSave),
+        });
+        toast.success("Quotation submitted for manager approval");
       } else {
         await updateQuotationDoc(editQuotation.id, {
-          status: editQuotation.status,
+          status: statusToSave,
           poNumber: editQuotation.poNumber,
           poValue: editQuotation.poValue,
           invoiceValue: editQuotation.invoiceValue,
@@ -111,8 +138,7 @@ const QuotationsPage: React.FC = () => {
           deliveryStatus: editQuotation.deliveryStatus,
         });
 
-        // If status is Sent, link to sales funnel (no duplicate)
-        if (editQuotation.status === "Sent") {
+        if (statusToSave === "Sent") {
           const existingFunnel = await fetchSalesFunnelByQuotationId(editQuotation.id);
           if (!existingFunnel) {
             await createSalesFunnelDoc({
@@ -122,7 +148,7 @@ const QuotationsPage: React.FC = () => {
               subject: editQuotation.subject,
               quotationValue: editQuotation.totalValue,
               followUpDate: editQuotation.followUpDate,
-              status: "Cold", // Default initial funnel status
+              status: "Cold",
               poValue: editQuotation.poValue || 0,
               deliveryStatus: editQuotation.deliveryStatus || "Pending",
               invoiceValue: editQuotation.invoiceValue || 0,
@@ -135,6 +161,9 @@ const QuotationsPage: React.FC = () => {
       }
 
       setEditQuotation(null);
+      setEditStatusDraft(null);
+      setEditStatusDirty(false);
+      loadData();
     } catch (e: any) {
       toast.error(e.message || "Failed to update");
     } finally {
@@ -190,7 +219,7 @@ const QuotationsPage: React.FC = () => {
             <SelectTrigger className="w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              {Object.entries(STATUS_LABELS).map(([k, v]) => (
+              {editableStatusOptions.map(([k, v]) => (
                 <SelectItem key={k} value={k}>{v}</SelectItem>
               ))}
             </SelectContent>
@@ -255,7 +284,7 @@ const QuotationsPage: React.FC = () => {
                             variant="ghost"
                             size="icon"
                             className="action-btn"
-                            onClick={() => setEditQuotation({ ...q })}
+                            onClick={() => openEditQuotation(q)}
                             disabled={isQuotationDisabled}
                             title={isQuotationDisabled ? "Cannot edit disabled quotation" : "Edit"}
                           >
@@ -298,9 +327,6 @@ const QuotationsPage: React.FC = () => {
                 <div><span className="text-muted-foreground">Status:</span> <StageBadge stage={viewQuotation.status} /></div>
                 <div><span className="text-muted-foreground">PO Number:</span> {viewQuotation.poNumber || "—"}</div>
                 <div><span className="text-muted-foreground">Invoice:</span> {viewQuotation.invoiceValue ? formatCurrency(viewQuotation.invoiceValue) : "—"}</div>
-                <div><span className="text-muted-foreground">Sales Person:</span> {viewQuotation.salesPersonName}</div>
-                <div><span className="text-muted-foreground">Designation:</span> {viewQuotation.salesPersonDesignation || "—"}</div>
-                <div><span className="text-muted-foreground">From Company:</span> {viewQuotation.salesPersonCompany || "—"}</div>
               </div>
               <div>
                 <h4 className="font-semibold mb-2">Products</h4>
@@ -357,20 +383,6 @@ const QuotationsPage: React.FC = () => {
                 </Table>
                 <p className="text-right font-bold mt-2">Total: {formatCurrency(viewQuotation.totalValue)}</p>
               </div>
-
-              {viewQuotation.salesPersonSignature && (
-                <div className="mt-4 p-4 border rounded-lg bg-muted/20 flex flex-col items-end">
-                  <span className="text-xs text-muted-foreground mb-1 font-medium">Authorized Signature</span>
-                  <div className="w-40 h-16 bg-white border rounded flex items-center justify-center p-1 overflow-hidden">
-                    <img src={viewQuotation.salesPersonSignature} alt="Signature" className="max-h-full max-w-full object-contain" />
-                  </div>
-                  <span className="text-xs font-semibold mt-1 text-foreground">{viewQuotation.salesPersonName}</span>
-                  {viewQuotation.salesPersonDesignation && (
-                    <span className="text-[10px] text-muted-foreground">{viewQuotation.salesPersonDesignation}</span>
-                  )}
-                </div>
-              )}
-
               <div className="flex gap-2 pt-4 border-t">
                 <Button
                   onClick={handleDownloadPDF}
@@ -390,7 +402,11 @@ const QuotationsPage: React.FC = () => {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editQuotation} onOpenChange={() => setEditQuotation(null)}>
+      <Dialog open={!!editQuotation} onOpenChange={() => {
+        setEditQuotation(null);
+        setEditStatusDraft(null);
+        setEditStatusDirty(false);
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">Update Quotation</DialogTitle>
@@ -399,18 +415,50 @@ const QuotationsPage: React.FC = () => {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={editQuotation.status} onValueChange={(v) => setEditQuotation({ ...editQuotation, status: v as QuotationStatus })}>
+                <Select
+                  value={editStatusDraft ?? editQuotation.status}
+                  disabled={isStatusChangeLocked}
+                  onValueChange={(value) => {
+                    if (isStatusChangeLocked) return;
+                    setEditStatusDraft(value as QuotationStatus);
+                    setEditStatusDirty(true);
+                  }}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                    {editableStatusOptions.map(([k, v]) => (
                       <SelectItem key={k} value={k}>{v}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isStatusChangeLocked && (
+                  <p className="text-xs text-muted-foreground">
+                    Status cannot be changed while the quotation is in approval pending.
+                  </p>
+                )}
               </div>
-              <Button onClick={saveUpdate} className="w-full" disabled={saving}>
-                {saving ? "Saving..." : "Save Changes"}
-              </Button>
+              {(() => {
+                const originalQuotation = quotations.find((q) => q.id === editQuotation.id);
+                const selectedStatus = editStatusDirty && editStatusDraft ? editStatusDraft : editQuotation.status;
+                const isSalespersonApprovalFlow =
+                  crmUser.role === "sales" &&
+                  selectedStatus === "Sent" &&
+                  originalQuotation?.status !== "Sent";
+
+                return (
+                  <Button
+                    onClick={saveUpdate}
+                    className="w-full"
+                    disabled={saving || isStatusChangeLocked}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : isSalespersonApprovalFlow
+                        ? "Send quotation for manager approval"
+                        : "Save Changes"}
+                  </Button>
+                );
+              })()}
             </div>
           )}
         </DialogContent>

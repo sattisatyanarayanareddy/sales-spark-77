@@ -98,7 +98,7 @@ const ItemsPage = () => {
   useEffect(() => {
     if (!crmUser) return;
     setLoading(true);
-    const unsubscribe = subscribeToProducts(crmUser.id, crmUser.role, crmUser.managerId, (data) => {
+    const unsubscribe = subscribeToProducts(crmUser.id, crmUser.role, crmUser.department, (data) => {
       setProducts(data);
       setLoading(false);
     });
@@ -223,6 +223,7 @@ const ItemsPage = () => {
           imageFile: formData.imageFile,
           imageUrl: existingImageUrl,
           userEmail: crmUser.email,
+          department: crmUser.department,
         });
         toast.success("Item updated successfully!");
       } else {
@@ -248,6 +249,7 @@ const ItemsPage = () => {
           imageFile: formData.imageFile || undefined,
           createdBy: crmUser.id,
           userEmail: crmUser.email,
+          department: crmUser.department,
         });
         toast.success("Item added successfully!");
       }

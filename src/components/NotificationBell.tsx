@@ -9,6 +9,7 @@ import {
   rejectQuotationDoc,
   exportQuotationToPDF,
 } from "@/lib/firestore-service";
+import { canManagerApproveQuotation } from "@/lib/quotation-status";
 import { AppNotification, Quotation } from "@/types/crm";
 import {
   Bell,
@@ -390,7 +391,7 @@ export const NotificationBell: React.FC = () => {
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-2 pt-4 border-t border-border/40">
                 {/* Manager Decision Actions */}
-                {isManager && selectedQuotation.status === "Created" && (
+                {isManager && canManagerApproveQuotation(selectedQuotation.status) && (
                   <div className="flex flex-1 gap-2">
                     <Button
                       onClick={handleApprove}

@@ -91,6 +91,14 @@ const SalesFunnelPage: React.FC = () => {
 
   const saveUpdate = async () => {
     if (!editFunnel) return;
+
+    const requiresFollowUpDate = !["Closed", "Cancelled", "Lost"].includes(editFunnel.status);
+
+    if (requiresFollowUpDate && !editFunnel.followUpDate) {
+      toast.error("Follow-up date is required");
+      return;
+    }
+
     setSaving(true);
     try {
       const parsedPo = parseFloat(poValueStr) || 0;
@@ -100,7 +108,7 @@ const SalesFunnelPage: React.FC = () => {
         poValue: parsedPo,
         deliveryStatus: editFunnel.deliveryStatus,
         invoiceValue: parsedInv,
-        followUpDate: editFunnel.followUpDate,
+        followUpDate: requiresFollowUpDate ? editFunnel.followUpDate : null,
       });
       toast.success("Sales funnel updated");
       setEditFunnel(null);
@@ -286,7 +294,18 @@ const SalesFunnelPage: React.FC = () => {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={editFunnel.status} onValueChange={(v) => setEditFunnel({ ...editFunnel, status: v as SalesFunnelStatus })}>
+                <Select
+                  value={editFunnel.status}
+                  onValueChange={(v) => {
+                    const nextStatus = v as SalesFunnelStatus;
+                    const shouldClearFollowUp = ["Closed", "Cancelled", "Lost"].includes(nextStatus);
+                    setEditFunnel({
+                      ...editFunnel,
+                      status: nextStatus,
+                      followUpDate: shouldClearFollowUp ? null : editFunnel.followUpDate,
+                    });
+                  }}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(SALES_FUNNEL_STATUS_LABELS).map(([k, v]) => (
@@ -320,11 +339,22 @@ const SalesFunnelPage: React.FC = () => {
                   )}
                 </>
               )}
-              <div className="space-y-2">
-                <Label>Follow-up Date</Label>
-                <Input type="date" value={editFunnel.followUpDate || ""} onChange={(e) => setEditFunnel({ ...editFunnel, followUpDate: e.target.value })} />
-              </div>
-              <Button onClick={saveUpdate} className="w-full" disabled={saving}>
+              {!["Closed", "Cancelled", "Lost"].includes(editFunnel.status) && (
+                <div className="space-y-2">
+                  <Label>Follow-up Date *</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={editFunnel.followUpDate || ""}
+                    onChange={(e) => setEditFunnel({ ...editFunnel, followUpDate: e.target.value })}
+                  />
+                </div>
+              )}
+              <Button
+                onClick={saveUpdate}
+                className="w-full"
+                disabled={saving || (!["Closed", "Cancelled", "Lost"].includes(editFunnel.status) && !editFunnel.followUpDate)}
+              >
                 {saving ? "Saving..." : "Save Changes"}
               </Button>
             </div>

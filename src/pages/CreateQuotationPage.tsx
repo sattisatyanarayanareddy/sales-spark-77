@@ -45,7 +45,7 @@ const CreateQuotationPage: React.FC = () => {
         setLoadingData(true);
         const [customersData, productsData] = await Promise.all([
           fetchCustomers(crmUser.id, crmUser.role),
-          fetchProducts(crmUser.id, crmUser.role, crmUser.managerId),
+          fetchProducts(crmUser.id, crmUser.role, crmUser.department),
         ]);
         setCustomers(customersData.filter((c) => !c.disabled));
         setAvailableProducts(productsData.filter((p) => !p.disabled));

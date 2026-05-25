@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { getAddUserRolePolicy } from "@/lib/user-form-policy";
 
 const roleBadge: Record<string, string> = {
   administrator: "bg-purple-100 text-purple-700",
@@ -432,6 +433,8 @@ const TeamPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  const rolePolicy = getAddUserRolePolicy(role);
+
   // Helper functions for Dialog Form Controls
   const handleOpenAddChange = (open: boolean) => {
     setShowAddDialog(open);
@@ -463,6 +466,9 @@ const TeamPage: React.FC = () => {
   const handleRoleChange = (val: UserRole) => {
     setRole(val);
     setManagerId(null);
+    if (val === "general_manager") {
+      setDepartment("");
+    }
   };
 
   // Password validation
@@ -506,8 +512,12 @@ const TeamPage: React.FC = () => {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !role || !department || !password) {
-      toast.error("Please fill all fields");
+    if (!name || !email || !role || !password) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+    if (rolePolicy.requiresDepartment && !department) {
+      toast.error("Please select a department");
       return;
     }
     if (!isPasswordValid || !passwordsMatch) {
@@ -517,16 +527,14 @@ const TeamPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      const finalDepartment = rolePolicy.requiresDepartment ? department.trim().toLowerCase() : "";
       let finalManagerId: string | null = null;
-      if (crmUser.role === "administrator") {
-        if (role === "sub_manager" || role === "sales") {
-          finalManagerId = managerId || null;
-        }
-      } else {
-        finalManagerId = role === "general_manager" || role === "administrator" ? null : crmUser!.id;
+
+      if (role === "sales") {
+        finalManagerId = managerId || null;
       }
 
-      await createUser(email, password, name, role, department.trim().toLowerCase(), finalManagerId, designation, companyName);
+      await createUser(email, password, name, role, finalDepartment, finalManagerId, designation, companyName);
       toast.success("Team member added!");
       setShowAddDialog(false);
       setName("");
@@ -549,8 +557,9 @@ const TeamPage: React.FC = () => {
   };
 
   const pageTitle = crmUser?.role === "administrator" ? "Users" : "Team Management";
-  const addButtonLabel = crmUser?.role === "administrator" ? "Add User" : "Add Team Member";
-  const addDialogTitle = crmUser?.role === "administrator" ? "Add User" : "Add Team Member";
+  const canAddUsers = crmUser?.role === "administrator";
+  const addButtonLabel = "Add User";
+  const addDialogTitle = "Add User";
   const addDialogDescription = "Create a new team member with a password. They can reset it later.";
 
   const filteredUsers = teamUsers.filter((user) => {
@@ -648,26 +657,27 @@ const TeamPage: React.FC = () => {
     <div className="page-container space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="section-title">{pageTitle}</h2>
-        <Dialog open={showAddDialog} onOpenChange={handleOpenAddChange}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenAddChange(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              {addButtonLabel}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-0 bg-card/95 backdrop-blur-md">
-            <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-violet-500/5 to-transparent">
-              <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-                <Plus className="w-5 h-5" />
+        {canAddUsers && (
+          <Dialog open={showAddDialog} onOpenChange={handleOpenAddChange}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenAddChange(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                {addButtonLabel}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-0 bg-card/95 backdrop-blur-md">
+              <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-violet-500/5 to-transparent">
+                <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-xl font-bold tracking-tight text-foreground">{addDialogTitle}</DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    {addDialogDescription}
+                  </DialogDescription>
+                </div>
               </div>
-              <div>
-                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">{addDialogTitle}</DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  {addDialogDescription}
-                </DialogDescription>
-              </div>
-            </div>
-            <form onSubmit={handleAddMember} className="space-y-4 p-6">
+              <form onSubmit={handleAddMember} className="space-y-4 p-6">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
                 <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required className="rounded-xl" />
@@ -763,40 +773,25 @@ const TeamPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="department">Department *</Label>
-                <Select value={department} onValueChange={(val) => handleDepartmentChange(val)}>
-                  <SelectTrigger id="department" className="rounded-xl">
-                    <SelectValue placeholder="Select Department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEPARTMENTS.map((dept) => (
-                      <SelectItem key={dept} value={dept.toLowerCase()}>
-                        {dept}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {crmUser.role === "administrator" && role === "sub_manager" && (
+              {rolePolicy.requiresDepartment && (
                 <div className="space-y-2">
-                  <Label htmlFor="add-gm-select">Assign General Manager</Label>
-                  <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
-                    <SelectTrigger id="add-gm-select" className="rounded-xl">
-                      <SelectValue placeholder="Select General Manager" />
+                  <Label htmlFor="department">Department *</Label>
+                  <Select value={department} onValueChange={(val) => handleDepartmentChange(val)}>
+                    <SelectTrigger id="department" className="rounded-xl">
+                      <SelectValue placeholder="Select Department" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Unassigned / None</SelectItem>
-                      {teamUsers.filter((u) => u.role === "general_manager").map((gm) => (
-                        <SelectItem key={gm.id} value={gm.id}>{gm.name}</SelectItem>
+                      {DEPARTMENTS.map((dept) => (
+                        <SelectItem key={dept} value={dept.toLowerCase()}>
+                          {dept}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
-              {crmUser.role === "administrator" && role === "sales" && (
+              {rolePolicy.requiresManagerAssignment && (
                 <div className="space-y-2">
                   <Label htmlFor="add-manager-select">Assign Manager</Label>
                   <Select value={managerId || "none"} onValueChange={(val) => setManagerId(val === "none" ? null : val)}>
@@ -836,6 +831,7 @@ const TeamPage: React.FC = () => {
             </form>
           </DialogContent>
         </Dialog>
+      )}
       </div>
 
       {/* Stats Row */}

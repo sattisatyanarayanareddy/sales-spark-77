@@ -14,6 +14,7 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { resolveQuotationApprovalManagerId } from "@/lib/quotation-approval";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 import { CRMUser, Quotation, QuotationStatus, DashboardStats, TeamMember, Product, Customer, UserRole, SalesFunnel, SalesFunnelStatus, AppNotification } from "@/types/crm";
 
@@ -57,6 +58,55 @@ const mapSalesFunnel = (id: string, data: any): SalesFunnel => ({
   updatedAt: toDate(data.updatedAt),
   disabled: !!data.disabled,
 });
+
+export function toNonNegativeNumber(value: unknown, label: string): number {
+  if (value === undefined || value === null || value === "") {
+    return 0;
+  }
+
+  const numericValue = typeof value === "number" ? value : Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    throw new Error(`${label} must be a valid number`);
+  }
+
+  if (numericValue < 0) {
+    throw new Error(`${label} must be greater than or equal to 0`);
+  }
+
+  return numericValue;
+}
+
+export function validateValueHierarchy(totalValue: number, poValue: number, invoiceValue: number): void {
+  if (poValue > totalValue) {
+    throw new Error("PO value cannot exceed quotation value");
+  }
+
+  if (invoiceValue > poValue) {
+    throw new Error("Invoice value cannot exceed PO value");
+  }
+}
+
+export function normalizeSalesFunnelPayload(
+  data: Omit<SalesFunnel, "id" | "createdAt" | "updatedAt">
+): Omit<SalesFunnel, "id" | "createdAt" | "updatedAt"> {
+  const allowedDeliveryStatuses = ["Pending", "Partial Delivery", "Delivered"] as const;
+  const allowedStatuses = ["Hot", "Warm", "Cold", "Closed", "Cancelled", "Lost", "Won"] as const;
+
+  return {
+    ...data,
+    quotationValue: toNonNegativeNumber(data.quotationValue, "Quotation value"),
+    poValue: toNonNegativeNumber(data.poValue, "PO value"),
+    invoiceValue: toNonNegativeNumber(data.invoiceValue, "Invoice value"),
+    deliveryStatus: allowedDeliveryStatuses.includes(data.deliveryStatus as (typeof allowedDeliveryStatuses)[number])
+      ? data.deliveryStatus
+      : "Pending",
+    status: allowedStatuses.includes(data.status as (typeof allowedStatuses)[number])
+      ? data.status
+      : "Cold",
+    followUpDate: data.followUpDate ?? null,
+  };
+}
 
 const mapQuotation = (id: string, data: any): Quotation => ({
   id,
@@ -249,9 +299,13 @@ export async function createQuotationDoc(
 }
 
 export async function requestQuotationApproval(quotation: Quotation): Promise<void> {
-  if (!quotation.managerId) {
+  const salesperson = await fetchUserDoc(quotation.salesPersonId);
+  const resolvedManagerId = resolveQuotationApprovalManagerId(quotation.managerId, salesperson?.managerId);
+
+  if (!resolvedManagerId) {
     throw new Error("No manager is assigned to this salesperson. Cannot request approval.");
   }
+
   await addDoc(collection(db, "notifications"), {
     type: "quotation_approval",
     title: "Quotation Pending Approval",
@@ -259,10 +313,10 @@ export async function requestQuotationApproval(quotation: Quotation): Promise<vo
     quotationId: quotation.id,
     salespersonId: quotation.salesPersonId,
     salespersonName: quotation.salesPersonName,
-    managerId: quotation.managerId,
+    managerId: resolvedManagerId,
     status: "pending",
     read: false,
-    recipientId: quotation.managerId,
+    recipientId: resolvedManagerId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -272,9 +326,24 @@ export async function updateQuotationDoc(
   id: string,
   updates: Partial<Quotation>
 ): Promise<void> {
+  const currentSnap = await getDoc(doc(db, "quotations", id));
+  if (!currentSnap.exists()) {
+    throw new Error("Quotation not found");
+  }
+
   const { id: _id, createdAt: _ca, ...rest } = updates as any;
+  const merged = { ...mapQuotation(id, currentSnap.data()), ...rest } as Quotation;
+  const totalValue = toNonNegativeNumber(merged.totalValue, "Quotation value");
+  const poValue = toNonNegativeNumber(merged.poValue, "PO value");
+  const invoiceValue = toNonNegativeNumber(merged.invoiceValue, "Invoice value");
+
+  validateValueHierarchy(totalValue, poValue, invoiceValue);
+
   await updateDoc(doc(db, "quotations", id), {
     ...rest,
+    totalValue,
+    poValue,
+    invoiceValue,
     updatedAt: serverTimestamp(),
   });
 }
@@ -311,8 +380,21 @@ export async function fetchSalesFunnelByQuotationId(quotationId: string): Promis
 }
 
 export async function createSalesFunnelDoc(data: Omit<SalesFunnel, "id" | "createdAt" | "updatedAt">): Promise<string> {
-  const docRef = await addDoc(collection(db, "salesFunnel"), {
+  const poValue = toNonNegativeNumber(data.poValue, "PO value");
+  const invoiceValue = toNonNegativeNumber(data.invoiceValue, "Invoice value");
+  const quotationValue = toNonNegativeNumber(data.quotationValue, "Quotation value");
+
+  validateValueHierarchy(quotationValue, poValue, invoiceValue);
+
+  const normalized = normalizeSalesFunnelPayload({
     ...data,
+    poValue,
+    invoiceValue,
+    quotationValue,
+  });
+
+  const docRef = await addDoc(collection(db, "salesFunnel"), {
+    ...normalized,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -323,9 +405,27 @@ export async function updateSalesFunnelDoc(
   id: string,
   updates: Partial<SalesFunnel>
 ): Promise<void> {
+  const currentSnap = await getDoc(doc(db, "salesFunnel", id));
+  if (!currentSnap.exists()) {
+    throw new Error("Sales funnel entry not found");
+  }
+
   const { id: _id, createdAt: _ca, ...rest } = updates as any;
-  await updateDoc(doc(db, "salesFunnel", id), {
+  const merged = { ...mapSalesFunnel(id, currentSnap.data()), ...rest } as SalesFunnel;
+  const quotationValue = toNonNegativeNumber(merged.quotationValue, "Quotation value");
+  const poValue = toNonNegativeNumber(merged.poValue, "PO value");
+  const invoiceValue = toNonNegativeNumber(merged.invoiceValue, "Invoice value");
+
+  validateValueHierarchy(quotationValue, poValue, invoiceValue);
+  const normalized = normalizeSalesFunnelPayload({
     ...rest,
+    quotationValue,
+    poValue,
+    invoiceValue,
+  });
+
+  await updateDoc(doc(db, "salesFunnel", id), {
+    ...normalized,
     updatedAt: serverTimestamp(),
   });
 }
@@ -396,7 +496,7 @@ export async function deleteCustomer(id: string): Promise<void> {
 
 // ── Products (Items) ──
 
-export async function fetchProducts(userId: string, role: string, userManagerId?: string | null): Promise<Product[]> {
+export async function fetchProducts(userId: string, role: string, userDepartment?: string | null): Promise<Product[]> {
   try {
     const snap = await getDocs(collection(db, "items"));
     const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
@@ -405,22 +505,15 @@ export async function fetchProducts(userId: string, role: string, userManagerId?
       return allProducts;
     }
 
-    const users = await fetchAllUsers();
-    const userRoleMap = new Map(users.map(u => [u.id, u.role]));
+    const normalizedDepartment = userDepartment?.trim().toLowerCase() || "";
+    return allProducts.filter((p) => {
+      const productDepartment = (p.department || "").trim().toLowerCase();
+      if (productDepartment) {
+        return productDepartment === normalizedDepartment;
+      }
 
-    if (role === "sub_manager") {
-      // Manager sees only manager-created items
-      return allProducts.filter((p) => {
-        const creatorRole = userRoleMap.get(p.createdBy) || "sales";
-        return creatorRole === "sub_manager" || p.createdBy === userId;
-      });
-    } else {
-      // Salesperson sees only salesperson-created items
-      return allProducts.filter((p) => {
-        const creatorRole = userRoleMap.get(p.createdBy) || "sales";
-        return creatorRole === "sales" || p.createdBy === userId;
-      });
-    }
+      return p.createdBy === userId;
+    });
   } catch (error) {
     console.error("Error fetching products:", error);
     return [];
@@ -446,6 +539,7 @@ export async function createProduct(data: {
   imageFile?: File;
   createdBy: string;
   userEmail: string;
+  department: string;
 }): Promise<string> {
   try {
     // Upload image to Cloudinary if provided
@@ -475,6 +569,7 @@ export async function createProduct(data: {
       imageUrl: imageUrl,
       createdBy: data.createdBy,
       userEmail: data.userEmail,
+      department: data.department,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -499,6 +594,7 @@ export async function updateProduct(
     imageFile?: File | null;
     imageUrl?: string;
     userEmail: string;
+    department?: string;
   }
 ): Promise<void> {
   try {
@@ -521,6 +617,7 @@ export async function updateProduct(
       value: data.value,
       saleAccount: data.saleAccount,
       imageUrl: finalImageUrl,
+      department: data.department || "",
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -1344,47 +1441,30 @@ export function subscribeToQuotations(
 export function subscribeToProducts(
   userId: string,
   role: string,
-  userManagerId: string | null,
+  userDepartment: string | null,
   callback: (products: Product[]) => void
 ): () => void {
-  const qUsers = collection(db, "users");
-  let unsubscribeProducts: (() => void) | null = null;
-  
-  const unsubscribeUsers = onSnapshot(qUsers, (usersSnap) => {
-    const users = usersSnap.docs.map((d) => ({
-      id: d.id,
-      role: d.data().role || "sales",
-    }));
-    const userRoleMap = new Map(users.map(u => [u.id, u.role]));
-    
-    if (unsubscribeProducts) unsubscribeProducts();
-    
-    const qProducts = collection(db, "items");
-    unsubscribeProducts = onSnapshot(qProducts, (prodSnap) => {
-      const allProducts = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
-      let filtered: Product[] = [];
-      
-      if (role === "general_manager" || role === "administrator") {
-        filtered = allProducts;
-      } else if (role === "sub_manager") {
-        filtered = allProducts.filter((p) => {
-          const creatorRole = userRoleMap.get(p.createdBy) || "sales";
-          return creatorRole === "sub_manager" || p.createdBy === userId;
-        });
-      } else {
-        filtered = allProducts.filter((p) => {
-          const creatorRole = userRoleMap.get(p.createdBy) || "sales";
-          return creatorRole === "sales" || p.createdBy === userId;
-        });
+  const qProducts = collection(db, "items");
+  return onSnapshot(qProducts, (prodSnap) => {
+    const allProducts = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
+
+    if (role === "general_manager" || role === "administrator") {
+      callback(allProducts);
+      return;
+    }
+
+    const normalizedDepartment = userDepartment?.trim().toLowerCase() || "";
+    const filtered = allProducts.filter((p) => {
+      const productDepartment = (p.department || "").trim().toLowerCase();
+      if (productDepartment) {
+        return productDepartment === normalizedDepartment;
       }
-      callback(filtered);
+
+      return p.createdBy === userId;
     });
+
+    callback(filtered);
   });
-  
-  return () => {
-    unsubscribeUsers();
-    if (unsubscribeProducts) unsubscribeProducts();
-  };
 }
 
 export function subscribeToCustomers(
