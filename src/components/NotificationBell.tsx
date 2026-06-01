@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import StageBadge from "@/components/StageBadge";
 import { toast } from "sonner";
 
@@ -54,6 +55,7 @@ export const NotificationBell: React.FC = () => {
   const [loadingQuotation, setLoadingQuotation] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
+  const [rejectionRemarks, setRejectionRemarks] = useState("");
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -150,16 +152,24 @@ export const NotificationBell: React.FC = () => {
 
   const handleReject = async () => {
     if (!activeNotification || !selectedQuotation) return;
+
+    const trimmedRemarks = rejectionRemarks.trim();
+    if (!trimmedRemarks) {
+      toast.error("Please add rejection remarks before rejecting the quotation");
+      return;
+    }
+
     setActionLoading(true);
     try {
-      await rejectQuotationDoc(activeNotification.id, selectedQuotation.id);
+      await rejectQuotationDoc(activeNotification.id, selectedQuotation.id, trimmedRemarks);
       toast.success("Quotation rejected and marked as draft");
-      
+
       // Update local state to reflect rejected status immediately
       setSelectedQuotation({
         ...selectedQuotation,
         status: "Draft",
       });
+      setRejectionRemarks("");
     } catch (e: any) {
       console.error(e);
       toast.error(e.message || "Failed to reject quotation");
@@ -168,8 +178,10 @@ export const NotificationBell: React.FC = () => {
     }
   };
 
+  const canDownloadPDF = selectedQuotation?.status === "Sent";
+
   const handleDownloadPDF = async () => {
-    if (!selectedQuotation) return;
+    if (!selectedQuotation || !canDownloadPDF) return;
     setDownloadingPDF(true);
     try {
       await exportQuotationToPDF(selectedQuotation);
@@ -284,7 +296,17 @@ export const NotificationBell: React.FC = () => {
       )}
 
       {/* Detailed Quotation Modal */}
-      <Dialog open={viewingQuotationOpen} onOpenChange={setViewingQuotationOpen}>
+      <Dialog
+        open={viewingQuotationOpen}
+        onOpenChange={(open) => {
+          setViewingQuotationOpen(open);
+          if (!open) {
+            setRejectionRemarks("");
+            setActiveNotification(null);
+            setSelectedQuotation(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-6 rounded-2xl">
           <DialogHeader className="border-b border-border/40 pb-4">
             <DialogTitle className="font-display flex items-center justify-between text-xl">
@@ -389,64 +411,80 @@ export const NotificationBell: React.FC = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-2 pt-4 border-t border-border/40">
-                {/* Manager Decision Actions */}
+              <div className="flex flex-col gap-4 pt-4 border-t border-border/40">
                 {isManager && canManagerApproveQuotation(selectedQuotation.status) && (
-                  <div className="flex flex-1 gap-2">
-                    <Button
-                      onClick={handleApprove}
-                      className="flex-1 bg-success hover:bg-success/90 text-success-foreground font-semibold flex items-center gap-1.5 h-10"
-                      disabled={actionLoading}
-                    >
-                      {actionLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Check className="w-4 h-4" />
-                      )}
-                      Approve
-                    </Button>
-                    <Button
-                      onClick={handleReject}
-                      variant="outline"
-                      className="flex-1 border-destructive/30 hover:bg-destructive/5 text-destructive font-semibold flex items-center gap-1.5 h-10"
-                      disabled={actionLoading}
-                    >
-                      {actionLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <X className="w-4 h-4" />
-                      )}
-                      Reject
-                    </Button>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-foreground">Rejection Remarks</label>
+                      <p className="text-[11px] text-muted-foreground mb-2">
+                        Add remarks before rejecting so the salesperson receives them in the rejection notification.
+                      </p>
+                      <Textarea
+                        value={rejectionRemarks}
+                        onChange={(event) => setRejectionRemarks(event.target.value)}
+                        placeholder="Enter remarks for the salesperson"
+                        className="min-h-[100px]"
+                      />
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Button
+                        onClick={handleApprove}
+                        className="flex-1 bg-success hover:bg-success/90 text-success-foreground font-semibold flex items-center gap-1.5 h-10"
+                        disabled={actionLoading}
+                      >
+                        {actionLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Check className="w-4 h-4" />
+                        )}
+                        Approve
+                      </Button>
+                      <Button
+                        onClick={handleReject}
+                        variant="outline"
+                        className="flex-1 border-destructive/30 hover:bg-destructive/5 text-destructive font-semibold flex items-center gap-1.5 h-10"
+                        disabled={actionLoading || rejectionRemarks.trim().length === 0}
+                      >
+                        {actionLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <X className="w-4 h-4" />
+                        )}
+                        Reject
+                      </Button>
+                    </div>
                   </div>
                 )}
 
-                {/* PDF Actions */}
-                <div className="flex flex-1 gap-2 justify-end w-full sm:w-auto">
-                  <Button
-                    variant="outline"
-                    onClick={handleDownloadPDF}
-                    className="flex-1 sm:flex-initial h-10"
-                    disabled={downloadingPDF}
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    {downloadingPDF ? "Generating..." : "Download PDF"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setViewingQuotationOpen(false)}
-                    className="flex-1 sm:flex-initial h-10 border border-border"
-                  >
-                    Close
-                  </Button>
+                <div className="flex justify-end">
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    {canDownloadPDF && (
+                      <Button
+                        variant="outline"
+                        onClick={handleDownloadPDF}
+                        className="flex-1 sm:flex-initial h-10"
+                        disabled={downloadingPDF}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        {downloadingPDF ? "Generating..." : "Download PDF"}
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      onClick={() => setViewingQuotationOpen(false)}
+                      className="flex-1 sm:flex-initial h-10 border border-border"
+                    >
+                      Close
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
           ) : (
             <p className="text-center py-6 text-sm text-muted-foreground">Error loading quotation.</p>
           )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  };

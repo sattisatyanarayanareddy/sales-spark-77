@@ -75,6 +75,8 @@ export interface Quotation {
   poNumber: string;
   poValue: number;
   invoiceValue: number;
+  pendingPayment: number;
+  paymentStatus: "Pending" | "Partial" | "Completed";
   followUpDate: string | null;
   followUpNotes: string;
   deliveryStatus: "Pending" | "Partial Delivery" | "Delivered";
@@ -129,10 +131,16 @@ export interface SalesFunnel {
   subject: string;
   quotationValue: number;
   followUpDate: string | null;
+  closingMonth: string | null;
+  closingYear: string | null;
+  wonMonth?: string | null;
+  remarks?: string;
   status: SalesFunnelStatus;
   poValue: number;
   deliveryStatus: "Pending" | "Partial Delivery" | "Delivered";
   invoiceValue: number;
+  pendingPayment: number;
+  paymentStatus: "Pending" | "Partial" | "Completed";
   salesPersonId: string;
   createdAt: string;
   updatedAt: string;

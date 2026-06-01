@@ -9,6 +9,7 @@ import {
   fetchTeamPerformanceData,
   exportTeamPerformanceToCSV,
   subscribeToAllUsers,
+  type TeamPerformanceRow,
 } from "@/lib/firestore-service";
 import { CRMUser, UserRole, Quotation, SalesFunnel } from "@/types/crm";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -46,10 +47,9 @@ import {
   X,
   Eye,
   EyeOff,
-  Users,
   Shield,
-  Building2,
   UserCheck,
+  ChevronLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -80,33 +80,309 @@ interface SalespersonModalProps {
 
 const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) => {
   const [loading, setLoading] = useState(true);
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [funnel, setFunnel] = useState<SalesFunnel[]>([]);
-  const [activeTab, setActiveTab] = useState<"quotations" | "funnel" | "performance" | "members">("quotations");
-  const [members, setMembers] = useState<any[]>([]);
+  const [combinedRows, setCombinedRows] = useState<
+    Array<{
+      id: string;
+      date: string | null;
+      quotationNumber: string;
+      companyName: string;
+      subject: string;
+      value: number;
+      status: string;
+      followUpDate: string | null;
+      closingMonthYear: string;
+      poValue: number;
+      invoiceValue: number;
+      paymentStatus?: string;
+      pendingPayment?: number;
+      remarks?: string;
+    }>
+  >([]);
+  const [members, setMembers] = useState<TeamPerformanceRow[]>([]);
+  const [activeUser, setActiveUser] = useState(user);
+  const [rootUser, setRootUser] = useState(user);
+
+  useEffect(() => {
+    setActiveUser(user);
+    setRootUser(user);
+  }, [user]);
+
+  const getClosingMonthYear = (value: { closingMonth?: string | null; closingYear?: string | null }) => {
+    if (!value.closingMonth && !value.closingYear) return "—";
+    if (!value.closingMonth) return value.closingYear || "—";
+    if (!value.closingYear) return value.closingMonth;
+    return `${value.closingMonth} / ${value.closingYear}`;
+  };
+
+  const formatDate = (dateValue?: string | null) => {
+    if (!dateValue) return "—";
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) return "—";
+    return parsed.toLocaleDateString();
+  };
+
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case "Won":
+        return "bg-green-600/10 text-green-600";
+      case "Hot":
+        return "bg-red-500/10 text-red-500";
+      case "Warm":
+        return "bg-orange-500/10 text-orange-500";
+      case "Sent":
+        return "bg-blue-500/10 text-blue-500";
+      case "Created":
+        return "bg-primary/10 text-primary";
+      default:
+        return "bg-gray-500/10 text-gray-500";
+    }
+  };
+
+  const exportSalespersonSales = () => {
+    try {
+      const headers = [
+        "Date",
+        "Quotation No",
+        "Company Name",
+        "Subject",
+        "Value",
+        "Status",
+        "Follow Up Date",
+        "Close Month/Year",
+        "PO Value",
+        "Invoice Value",
+      ];
+
+      const escapeCsv = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
+      const rows = combinedRows.map((row) => [
+        row.date ? new Date(row.date).toLocaleDateString() : "",
+        row.quotationNumber,
+        row.companyName,
+        row.subject,
+        row.value.toString(),
+        row.status,
+        row.followUpDate ? new Date(row.followUpDate).toLocaleDateString() : "",
+        row.closingMonthYear,
+        row.poValue.toString(),
+        row.invoiceValue.toString(),
+      ].map((value) => escapeCsv(value)).join(","));
+
+      const csv = [headers.map(escapeCsv).join(","), ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${activeUser.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "salesperson"}-sales.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Sales report downloaded");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to download sales report");
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        if (user.role === "sales") {
+        if (activeUser.role === "sales") {
           const [qs, sf] = await Promise.all([
-            fetchQuotations(user.id, "sales"),
-            fetchSalesFunnel(user.id, "sales"),
+            fetchQuotations(activeUser.id, "sales"),
+            fetchSalesFunnel(activeUser.id, "sales"),
           ]);
-          setQuotations(qs);
-          setFunnel(sf);
+
+          const nonDraftQuotations = qs.filter((quotation) => quotation.status !== "Draft");
+          const nonDraftFunnels = sf.filter((item) => item.status !== "Draft");
+
+          const funnelByQuotationNumber = new Map<string, SalesFunnel>();
+          nonDraftFunnels.forEach((item) => {
+            if (item.quotationNumber) {
+              funnelByQuotationNumber.set(item.quotationNumber, item);
+            }
+          });
+
+          const mergedRows = nonDraftQuotations.map((quotation) => {
+            const funnelMatch = funnelByQuotationNumber.get(quotation.quotationNumber);
+            return {
+              id: quotation.id,
+              date: quotation.createdAt,
+              quotationNumber: quotation.quotationNumber,
+              companyName: quotation.companyName,
+              subject: quotation.subject,
+              value: quotation.totalValue ?? 0,
+              status: funnelMatch?.status || quotation.status,
+              followUpDate: funnelMatch?.followUpDate || quotation.followUpDate,
+              closingMonthYear: getClosingMonthYear(
+                funnelMatch || { closingMonth: null, closingYear: null }
+              ),
+              poValue: funnelMatch?.poValue ?? quotation.poValue ?? 0,
+              invoiceValue: funnelMatch?.invoiceValue ?? quotation.invoiceValue ?? 0,
+              paymentStatus: funnelMatch?.paymentStatus ?? "Pending",
+              pendingPayment: funnelMatch?.pendingPayment ?? 0,
+              remarks: funnelMatch?.remarks ?? quotation.followUpNotes ?? "",
+            };
+          });
+
+          const unmatchedFunnels = nonDraftFunnels
+            .filter((item) => !mergedRows.some((row) => row.quotationNumber === item.quotationNumber))
+            .map((item) => ({
+              id: item.id,
+              date: item.createdAt,
+              quotationNumber: item.quotationNumber,
+              companyName: item.companyName,
+              subject: item.subject,
+              value: item.quotationValue ?? 0,
+              status: item.status,
+              followUpDate: item.followUpDate,
+              closingMonthYear: getClosingMonthYear(item),
+              poValue: item.poValue ?? 0,
+              invoiceValue: item.invoiceValue ?? 0,
+              paymentStatus: item.paymentStatus ?? "Pending",
+              pendingPayment: item.pendingPayment ?? 0,
+              remarks: item.remarks ?? "",
+            }));
+
+          setCombinedRows([...mergedRows, ...unmatchedFunnels].sort((a, b) => {
+            const aTime = a.date ? new Date(a.date).getTime() : 0;
+            const bTime = b.date ? new Date(b.date).getTime() : 0;
+            return bTime - aTime;
+          }));
           setMembers([]);
-          setActiveTab("quotations");
-        } else {
-          // For managers, fetch team performance rows
-          const rows = await fetchTeamPerformanceData(user.id, user.role);
-          setMembers(rows);
-          // aggregate values for top-level stats
-          setQuotations([]);
-          setFunnel([]);
-          setActiveTab("performance");
+          return;
         }
+        // If active user is a manager, load only manager's own sales and also fetch their team members
+        if (activeUser.role === "sub_manager") {
+          const [qs, sf, performanceRows] = await Promise.all([
+            fetchQuotations(activeUser.id, "sub_manager"),
+            fetchSalesFunnel(activeUser.id, "sub_manager"),
+            fetchTeamPerformanceData(activeUser.id, activeUser.role),
+          ]);
+
+          const nonDraftQuotations = qs.filter((quotation) => quotation.status !== "Draft");
+          const nonDraftFunnels = sf.filter((item) => item.status !== "Draft" && item.salesPersonId === activeUser.id);
+
+          const funnelByQuotationNumber = new Map<string, SalesFunnel>();
+          nonDraftFunnels.forEach((item) => {
+            if (item.quotationNumber) {
+              funnelByQuotationNumber.set(item.quotationNumber, item);
+            }
+          });
+
+          const mergedRows = nonDraftQuotations.map((quotation) => {
+            const funnelMatch = funnelByQuotationNumber.get(quotation.quotationNumber);
+            return {
+              id: quotation.id,
+              date: quotation.createdAt,
+              quotationNumber: quotation.quotationNumber,
+              companyName: quotation.companyName,
+              subject: quotation.subject,
+              value: quotation.totalValue ?? 0,
+              status: funnelMatch?.status || quotation.status,
+              followUpDate: funnelMatch?.followUpDate || quotation.followUpDate,
+              closingMonthYear: getClosingMonthYear(funnelMatch || { closingMonth: null, closingYear: null }),
+              poValue: funnelMatch?.poValue ?? quotation.poValue ?? 0,
+              invoiceValue: funnelMatch?.invoiceValue ?? quotation.invoiceValue ?? 0,
+              paymentStatus: funnelMatch?.paymentStatus ?? "Pending",
+              pendingPayment: funnelMatch?.pendingPayment ?? 0,
+              remarks: funnelMatch?.remarks ?? quotation.followUpNotes ?? "",
+            };
+          });
+
+          const unmatchedFunnels = nonDraftFunnels
+            .filter((item) => !mergedRows.some((row) => row.quotationNumber === item.quotationNumber))
+            .map((item) => ({
+              id: item.id,
+              date: item.createdAt,
+              quotationNumber: item.quotationNumber,
+              companyName: item.companyName,
+              subject: item.subject,
+              value: item.quotationValue ?? 0,
+              status: item.status,
+              followUpDate: item.followUpDate,
+              closingMonthYear: getClosingMonthYear(item),
+              poValue: item.poValue ?? 0,
+              invoiceValue: item.invoiceValue ?? 0,
+              paymentStatus: item.paymentStatus ?? "Pending",
+              pendingPayment: item.pendingPayment ?? 0,
+              remarks: item.remarks ?? "",
+            }));
+
+          setCombinedRows([...mergedRows, ...unmatchedFunnels].sort((a, b) => {
+            const aTime = a.date ? new Date(a.date).getTime() : 0;
+            const bTime = b.date ? new Date(b.date).getTime() : 0;
+            return bTime - aTime;
+          }));
+          setMembers(performanceRows);
+          return;
+        }
+
+        // General manager: show aggregated team data (existing behavior)
+        const performanceRows = await fetchTeamPerformanceData(activeUser.id, activeUser.role);
+        const teamIds = performanceRows.map((row) => row.id);
+        const [allQuotations, allFunnels] = await Promise.all([
+          fetchQuotations(activeUser.id, "general_manager"),
+          fetchSalesFunnel(activeUser.id, "general_manager"),
+        ]);
+
+        const nonDraftQuotations = allQuotations.filter((quotation) => quotation.status !== "Draft");
+        const nonDraftFunnels = allFunnels.filter((funnel) => funnel.status !== "Draft");
+        const filteredQuotations = nonDraftQuotations.filter((quote) => teamIds.includes(quote.salesPersonId));
+        const filteredFunnels = nonDraftFunnels.filter((funnel) => teamIds.includes(funnel.salesPersonId));
+        const funnelByQuotationNumber = new Map<string, SalesFunnel>();
+        filteredFunnels.forEach((item) => {
+          if (item.quotationNumber) {
+            funnelByQuotationNumber.set(item.quotationNumber, item);
+          }
+        });
+
+        const mergedRows = filteredQuotations.map((quotation) => {
+          const funnelMatch = funnelByQuotationNumber.get(quotation.quotationNumber);
+          return {
+            id: quotation.id,
+            date: quotation.createdAt,
+            quotationNumber: quotation.quotationNumber,
+            companyName: quotation.companyName,
+            subject: quotation.subject,
+            value: quotation.totalValue ?? 0,
+            status: funnelMatch?.status || quotation.status,
+            followUpDate: funnelMatch?.followUpDate || quotation.followUpDate,
+            closingMonthYear: getClosingMonthYear(
+              funnelMatch || { closingMonth: null, closingYear: null }
+            ),
+            poValue: funnelMatch?.poValue ?? quotation.poValue ?? 0,
+            invoiceValue: funnelMatch?.invoiceValue ?? quotation.invoiceValue ?? 0,
+            paymentStatus: funnelMatch?.paymentStatus ?? "Pending",
+            pendingPayment: funnelMatch?.pendingPayment ?? 0,
+            remarks: funnelMatch?.remarks ?? quotation.followUpNotes ?? "",
+          };
+        });
+
+        const unmatchedFunnels = filteredFunnels
+          .filter((item) => !mergedRows.some((row) => row.quotationNumber === item.quotationNumber))
+          .map((item) => ({
+            id: item.id,
+            date: item.createdAt,
+            quotationNumber: item.quotationNumber,
+            companyName: item.companyName,
+            subject: item.subject,
+            value: item.quotationValue ?? 0,
+            status: item.status,
+            followUpDate: item.followUpDate,
+            closingMonthYear: getClosingMonthYear(item),
+            poValue: item.poValue ?? 0,
+            invoiceValue: item.invoiceValue ?? 0,
+            paymentStatus: item.paymentStatus ?? "Pending",
+            pendingPayment: item.pendingPayment ?? 0,
+            remarks: item.remarks ?? "",
+          }));
+
+        setCombinedRows([...mergedRows, ...unmatchedFunnels].sort((a, b) => {
+          const aTime = a.date ? new Date(a.date).getTime() : 0;
+          const bTime = b.date ? new Date(b.date).getTime() : 0;
+          return bTime - aTime;
+        }));
+        setMembers(performanceRows);
       } catch (e) {
         console.error(e);
         toast.error("Failed to load salesperson data");
@@ -114,22 +390,32 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
         setLoading(false);
       }
     };
-    load();
-  }, [user.id]);
 
-  const activeDeals = quotations.filter(
-    (q) => !["Won", "Closed", "Cancelled", "Lost"].includes(q.status)
+    load();
+  }, [activeUser.id, activeUser.role]);
+
+  const activeDeals = combinedRows.filter(
+    (row) => !["Won", "Closed", "Cancelled", "Lost"].includes(row.status)
   ).length;
-  const totalQuotationValue = quotations.reduce((s, q) => s + q.totalValue, 0);
-  const totalPOValue = funnel.reduce((s, f) => s + (f.poValue || 0), 0);
-  const totalInvoiceValue = funnel.reduce((s, f) => s + (f.invoiceValue || 0), 0);
-  const wonDeals = funnel.filter((f) => f.status === "Won").length;
+  const totalQuotationValue = combinedRows.reduce((s, row) => s + row.value, 0);
+  const totalPOValue = combinedRows.reduce((s, row) => s + row.poValue, 0);
+  const totalInvoiceValue = combinedRows.reduce((s, row) => s + row.invoiceValue, 0);
+  const totalPaymentsReceived = combinedRows.reduce((sum, row) => {
+    const inv = row.invoiceValue || 0;
+    const pending = row.pendingPayment ?? 0;
+    if (!inv) return sum;
+    if (row.paymentStatus === "Completed") return sum + inv;
+    if (row.paymentStatus === "Partial") return sum + Math.max(0, inv - pending);
+    return sum;
+  }, 0);
+  const wonDeals = combinedRows.filter((row) => row.status === "Won").length;
 
   const stats = [
     { label: "Active Deals", value: activeDeals, icon: Activity, color: "text-blue-500", bg: "bg-blue-500/10" },
     { label: "Quotation Value", value: fmtCurrency(totalQuotationValue), icon: FileText, color: "text-violet-500", bg: "bg-violet-500/10" },
     { label: "PO Value", value: fmtCurrency(totalPOValue), icon: DollarSign, color: "text-amber-500", bg: "bg-amber-500/10" },
     { label: "Invoice Value", value: fmtCurrency(totalInvoiceValue), icon: Activity, color: "text-teal-500", bg: "bg-teal-500/10" },
+    { label: "Payments Received", value: fmtCurrency(totalPaymentsReceived), icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-600/10" },
     { label: "Won Deals", value: wonDeals, icon: CheckCircle, color: "text-green-500", bg: "bg-green-500/10" },
   ];
 
@@ -144,30 +430,46 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between p-6 border-b border-border bg-gradient-to-r from-primary/5 to-violet-500/5">
           <div>
-            <h2 className="text-xl font-bold text-foreground">{user.name}</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">{user.email}</p>
+            <h2 className="text-xl font-bold text-foreground">{activeUser.name}</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">{activeUser.email}</p>
             <div className="flex items-center gap-2 mt-2">
-              <Badge variant="outline" className={`border-0 text-xs ${roleBadge[user.role]}`}>
-                {roleLabel[user.role]}
+              <Badge variant="outline" className={`border-0 text-xs ${roleBadge[activeUser.role]}`}>
+                {roleLabel[activeUser.role]}
               </Badge>
-              {user.department && (
+              {activeUser.department && (
                 <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
-                  {user.department}
+                  {activeUser.department}
                 </span>
               )}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {rootUser.id !== activeUser.id && (
+              <Button variant="ghost" size="icon" onClick={() => setActiveUser(rootUser)} title="Back">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportSalespersonSales}
+              disabled={combinedRows.length === 0}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download
+            </Button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -191,202 +493,93 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
               ))}
             </div>
 
-            <div className="flex border-b border-border px-5 pt-4 gap-1">
-              {((user.role === "sales") ? (["quotations", "funnel"] as const) : (["performance", "members"] as const)).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px ${
-                    activeTab === tab
-                      ? "border-primary text-primary bg-primary/5"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {tab === "quotations" && `Quotations (${quotations.length})`}
-                  {tab === "funnel" && `Sales Funnel (${funnel.length})`}
-                  {tab === "performance" && `Team Performance (${members.reduce((s, r) => s + (r.activeDeals || 0), 0)})`}
-                  {tab === "members" && `Members (${members.length})`}
-                </button>
-              ))}
-            </div>
+            {activeUser.role === "sub_manager" && members.length > 0 && (
+              <div className="p-5 border-b">
+                <h4 className="text-sm font-semibold mb-2">Team Members</h4>
+                <div className="flex flex-wrap gap-2">
+                  {members.filter((m) => m.role === "sales").map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setActiveUser({
+                        id: m.id,
+                        name: m.name,
+                        email: m.email || "",
+                        role: "sales",
+                        department: m.department || "",
+                        managerId: activeUser.id,
+                        createdAt: "",
+                      } as CRMUser)}
+                      className="px-3 py-1 rounded-full bg-card border border-border text-sm hover:bg-primary/5"
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="p-5">
-              {activeTab === "quotations" && (
-                <div className="overflow-x-auto rounded-xl border border-border">
-                  <Table>
-                    <TableHeader>
+              <div className="mb-3 text-sm text-muted-foreground">
+                Showing all sales records for {activeUser.role === "sales" ? "this salesperson" : "the selected team"}
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <Table className="min-w-[1100px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Quotation No</TableHead>
+                      <TableHead>Company Name</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Follow up date</TableHead>
+                      <TableHead>Close Month/Year</TableHead>
+                      <TableHead className="text-right">PO Value</TableHead>
+                      <TableHead className="text-right">Invoice value</TableHead>
+                      <TableHead className="text-right">Payment</TableHead>
+                      <TableHead>Remarks</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {combinedRows.length === 0 ? (
                       <TableRow>
-                        <TableHead>Quotation No</TableHead>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Subject</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Date</TableHead>
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                          No sales records found
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {quotations.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                            No quotations found
+                    ) : (
+                      combinedRows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="text-xs text-muted-foreground">{formatDate(row.date)}</TableCell>
+                          <TableCell className="font-mono text-xs">{row.quotationNumber}</TableCell>
+                          <TableCell className="text-sm">{row.companyName}</TableCell>
+                          <TableCell className="text-sm max-w-[220px] truncate">{row.subject}</TableCell>
+                          <TableCell className="text-right font-medium">{fmtCurrency(row.value)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`border-0 text-xs ${getStatusClass(row.status)}`}>
+                              {row.status}
+                            </Badge>
                           </TableCell>
-                        </TableRow>
-                      ) : (
-                        quotations.map((q) => (
-                          <TableRow key={q.id}>
-                            <TableCell className="font-mono text-xs">{q.quotationNumber}</TableCell>
-                            <TableCell className="text-sm">{q.companyName}</TableCell>
-                            <TableCell className="text-sm max-w-[180px] truncate">{q.subject}</TableCell>
-                            <TableCell className="text-right font-medium">{fmtCurrency(q.totalValue)}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`border-0 text-xs ${
-                                  q.status === "Won"
-                                    ? "bg-green-500/10 text-green-500"
-                                    : q.status === "Sent"
-                                    ? "bg-blue-500/10 text-blue-500"
-                                    : q.status === "Created"
-                                    ? "bg-primary/10 text-primary"
-                                    : "bg-gray-500/10 text-gray-500"
-                                }`}
-                              >
-                                {q.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {q.createdAt ? new Date(q.createdAt).toLocaleDateString() : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-
-              {activeTab === "funnel" && (
-                <div className="overflow-x-auto rounded-xl border border-border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Company</TableHead>
-                        <TableHead className="text-right">Quotation Value</TableHead>
-                        <TableHead className="text-right">PO Value</TableHead>
-                        <TableHead className="text-right">Invoice Value</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Follow-up</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {funnel.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                            No funnel entries found
+                          <TableCell className="text-xs text-muted-foreground">{formatDate(row.followUpDate)}</TableCell>
+                          <TableCell className="text-sm">{row.closingMonthYear}</TableCell>
+                          <TableCell className="text-right">{fmtCurrency(row.poValue)}</TableCell>
+                          <TableCell className="text-right">{fmtCurrency(row.invoiceValue)}</TableCell>
+                          <TableCell className="text-right text-sm">
+                            {row.invoiceValue > 0 ? (
+                              row.paymentStatus === "Partial" ?
+                                `Partial ($${Math.max(0, row.invoiceValue - (row.pendingPayment ?? 0)).toLocaleString()} paid)` :
+                              row.paymentStatus === "Completed" ?
+                                "Completed" :
+                                `Pending ($${(row.pendingPayment ?? 0).toLocaleString()} due)`
+                            ) : "—"}
                           </TableCell>
+                          <TableCell className="text-sm max-w-[220px] truncate">{row.remarks || "—"}</TableCell>
                         </TableRow>
-                      ) : (
-                        funnel.map((f) => (
-                          <TableRow key={f.id}>
-                            <TableCell className="text-sm">{f.companyName}</TableCell>
-                            <TableCell className="text-right font-medium">{fmtCurrency(f.quotationValue)}</TableCell>
-                            <TableCell className="text-right">{fmtCurrency(f.poValue)}</TableCell>
-                            <TableCell className="text-right">{fmtCurrency(f.invoiceValue)}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`border-0 text-xs ${
-                                  f.status === "Won"
-                                    ? "bg-green-600/10 text-green-600"
-                                    : f.status === "Hot"
-                                    ? "bg-red-500/10 text-red-500"
-                                    : f.status === "Warm"
-                                    ? "bg-orange-500/10 text-orange-500"
-                                    : f.status === "Lost"
-                                    ? "bg-red-600/10 text-red-600"
-                                    : "bg-gray-500/10 text-gray-500"
-                                }`}
-                              >
-                                {f.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {f.followUpDate ? new Date(f.followUpDate).toLocaleDateString() : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-
-              {activeTab === "performance" && (
-                <div className="p-5">
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                    {(() => {
-                      const activeDeals = members.reduce((s, r) => s + (r.activeDeals || 0), 0);
-                      const totalQuotationValue = members.reduce((s, r) => s + (r.totalQuotationValue || 0), 0);
-                      const totalPOValue = members.reduce((s, r) => s + (r.totalPOValue || 0), 0);
-                      const totalInvoiceValue = members.reduce((s, r) => s + (r.totalInvoiceValue || 0), 0);
-                      const wonDeals = members.reduce((s, r) => s + (r.wonDeals || 0), 0);
-
-                      const stats = [
-                        { label: "Active Deals", value: activeDeals, icon: Activity, color: "text-blue-500", bg: "bg-blue-500/10" },
-                        { label: "Quotation Value", value: fmtCurrency(totalQuotationValue), icon: FileText, color: "text-violet-500", bg: "bg-violet-500/10" },
-                        { label: "PO Value", value: fmtCurrency(totalPOValue), icon: DollarSign, color: "text-amber-500", bg: "bg-amber-500/10" },
-                        { label: "Invoice Value", value: fmtCurrency(totalInvoiceValue), icon: Activity, color: "text-teal-500", bg: "bg-teal-500/10" },
-                        { label: "Won Deals", value: wonDeals, icon: CheckCircle, color: "text-green-500", bg: "bg-green-500/10" },
-                      ];
-
-                      return stats.map((s) => (
-                        <div key={s.label} className="rounded-xl border border-border bg-card p-3 flex flex-col gap-1.5">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${s.bg}`}>
-                            <s.icon className={`w-4 h-4 ${s.color}`} />
-                          </div>
-                          <p className="text-[11px] text-muted-foreground leading-tight">{s.label}</p>
-                          <p className="text-base font-bold text-foreground leading-tight">{s.value}</p>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "members" && (
-                <div className="p-5 overflow-x-auto rounded-xl border border-border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead className="text-right">Active Deals</TableHead>
-                        <TableHead className="text-right">Quotation Value</TableHead>
-                        <TableHead className="text-right">PO Value</TableHead>
-                        <TableHead className="text-right">Invoice Value</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {members.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No members found</TableCell>
-                        </TableRow>
-                      ) : (
-                        members.map((m) => (
-                          <TableRow key={m.id}>
-                            <TableCell className="font-medium">{m.name}</TableCell>
-                            <TableCell className="text-muted-foreground text-sm">{m.email}</TableCell>
-                            <TableCell className="text-right">{m.activeDeals}</TableCell>
-                            <TableCell className="text-right">{fmtCurrency(m.totalQuotationValue)}</TableCell>
-                            <TableCell className="text-right">{fmtCurrency(m.totalPOValue)}</TableCell>
-                            <TableCell className="text-right">{fmtCurrency(m.totalInvoiceValue)}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </div>
         )}
@@ -559,6 +752,7 @@ const TeamPage: React.FC = () => {
 
   const pageTitle = crmUser?.role === "administrator" ? "Users" : crmUser?.role === "general_manager" ? "Managers" : "Team Management";
   const canAddUsers = crmUser?.role === "administrator";
+  const canViewSales = crmUser?.role !== "administrator";
   const addButtonLabel = "Add User";
   const addDialogTitle = "Add User";
   const addDialogDescription = "Create a new team member with a password. They can reset it later.";
@@ -644,12 +838,8 @@ const TeamPage: React.FC = () => {
     }
   };
 
-  const activeMembersCount = teamUsers.filter((u) => !u.disabled).length;
-  const managersCount = crmUser?.role === "general_manager" ? teamUsers.filter((u) => u.role === "sub_manager").length : teamUsers.filter((u) => u.role === "sub_manager").length;
+  const managersCount = teamUsers.filter((u) => u.role === "sub_manager").length;
   const salesCount = crmUser?.role === "general_manager" ? 0 : teamUsers.filter((u) => u.role === "sales").length;
-  const uniqueDeptsCount = Array.from(
-    new Set(teamUsers.map((u) => u.department?.toLowerCase()).filter(Boolean))
-  ).length;
 
   if (!crmUser) return null;
   if (loading) return <div className="page-container flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -836,36 +1026,16 @@ const TeamPage: React.FC = () => {
       </div>
 
       {/* Stats Row */}
-      <div className={`grid grid-cols-1 gap-4 ${crmUser?.role === "general_manager" ? "sm:grid-cols-2 lg:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
+      {crmUser?.role === "general_manager" ? (
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="stat-card"
+          className="stat-card sm:max-w-sm"
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Members</p>
-              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{activeMembersCount}</h3>
-            </div>
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center text-xs text-muted-foreground">
-            <span className="text-green-500 mr-1">✓</span> Accounts with system access
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.05 }}
-          className="stat-card"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{crmUser?.role === "general_manager" ? "Managers" : "Managers"}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Managers</p>
               <h3 className="text-3xl font-extrabold mt-1 text-foreground">{managersCount}</h3>
             </div>
             <div className="p-3 rounded-2xl bg-violet-500/10 text-violet-500">
@@ -873,11 +1043,31 @@ const TeamPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-3 flex items-center text-xs text-muted-foreground">
-            {crmUser?.role === "general_manager" ? "Your team managers" : "Directing team departments"}
+            Your team managers
           </div>
         </motion.div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="stat-card"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Managers</p>
+                <h3 className="text-3xl font-extrabold mt-1 text-foreground">{managersCount}</h3>
+              </div>
+              <div className="p-3 rounded-2xl bg-violet-500/10 text-violet-500">
+                <Shield className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center text-xs text-muted-foreground">
+              Directing team departments
+            </div>
+          </motion.div>
 
-        {crmUser?.role !== "general_manager" && (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -897,28 +1087,8 @@ const TeamPage: React.FC = () => {
               Driving active lead funnels
             </div>
           </motion.div>
-        )}
-
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15 }}
-          className="stat-card"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Departments</p>
-              <h3 className="text-3xl font-extrabold mt-1 text-foreground">{uniqueDeptsCount || DEPARTMENTS.length}</h3>
-            </div>
-            <div className="p-3 rounded-2xl bg-teal-500/10 text-teal-500">
-              <Building2 className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center text-xs text-muted-foreground">
-            Functional organizational units
-          </div>
-        </motion.div>
-      </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Input type="search" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="max-w-md" />
@@ -937,72 +1107,54 @@ const TeamPage: React.FC = () => {
               <TableHead className="font-semibold text-foreground/90">Email</TableHead>
               <TableHead className="font-semibold text-foreground/90">Role</TableHead>
               <TableHead className="font-semibold text-foreground/90">Department</TableHead>
-              <TableHead className="font-semibold text-foreground/90">Designation</TableHead>
-              <TableHead className="font-semibold text-foreground/90">Company</TableHead>
-              <TableHead className="font-semibold text-foreground/90">Assigned With</TableHead>
               <TableHead className="text-right font-semibold text-foreground/90">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredUsers.map((user, idx) => {
-              // Find the manager/GM this user is assigned to
-              const assignedTo = user.managerId
-                ? teamUsers.find((u) => u.id === user.managerId)
-                : null;
-              return (
-                <TableRow key={user.id} className={`border-b border-border/40 transition-all duration-200 ${user.disabled ? "opacity-50 bg-muted/30" : idx % 2 === 0 ? "hover:bg-muted/40" : "hover:bg-primary/5"}`}>
-                  <TableCell className="font-semibold text-foreground/95 py-3.5">
-                    {user.role === "sales" && crmUser.role !== "administrator" ? (
-                      <button onClick={() => setSelectedSalesperson(user)} className="text-primary hover:text-primary/80 hover:underline font-bold transition-colors">{user.name}</button>
-                    ) : <span className="font-semibold">{user.name}</span>}
-                    {user.disabled && (
-                      <Badge variant="outline" className="ml-2 text-[10px] py-0.5 px-2 h-auto bg-destructive/10 text-destructive border-destructive/30 font-medium">Disabled</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm py-3.5 font-medium">{user.email}</TableCell>
-                  <TableCell className="py-3.5">
-                    <Badge variant="outline" className={`border-0 text-xs font-semibold px-3 py-1 ${roleBadge[user.role]}`}>{roleLabel[user.role]}</Badge>
-                  </TableCell>
-                  <TableCell className="capitalize text-sm font-medium text-foreground/80 py-3.5">{user.department ? user.department.charAt(0).toUpperCase() + user.department.slice(1) : "—"}</TableCell>
-                  <TableCell className="text-sm text-foreground/75 py-3.5">{user.designation || "—"}</TableCell>
-                  <TableCell className="text-sm text-foreground/75 py-3.5">{user.companyName || "—"}</TableCell>
-                  <TableCell className="text-sm py-3.5">
-                    {assignedTo ? (
-                      <span className="flex items-center gap-2 p-2 rounded-lg bg-primary/8 border border-primary/20 w-fit">
-                        <span className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-violet-500 text-white text-[11px] font-bold inline-flex items-center justify-center shrink-0 shadow-sm">
-                          {assignedTo.name.charAt(0).toUpperCase()}
-                        </span>
-                        <div className="flex flex-col gap-0">
-                          <span className="text-foreground font-semibold text-xs">{assignedTo.name}</span>
-                          <span className="text-muted-foreground text-[11px]">{roleLabel[assignedTo.role]}</span>
-                        </div>
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/60 text-xs italic font-medium">Unassigned</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right py-3.5">
-                    <div className="inline-flex items-center gap-1.5">
-                      <Button variant="ghost" size="icon" className="action-btn h-8 w-8 hover:bg-primary/10 hover:text-primary transition-all" onClick={() => openEditUser(user)} disabled={user.disabled} title={user.disabled ? "Cannot edit disabled user" : "Edit user"}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-8 w-8 transition-all ${user.disabled ? "text-green-600 hover:bg-green-500/10 hover:text-green-700" : "text-amber-600 hover:bg-amber-500/10 hover:text-amber-700"}`}
-                        onClick={() => handleToggleStatus(user)}
-                        title={user.disabled ? "Enable User" : "Disable User"}
-                      >
-                        {user.disabled ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {filteredUsers.map((user, idx) => (
+              <TableRow key={user.id} className={`border-b border-border/40 transition-all duration-200 ${user.disabled ? "opacity-50 bg-muted/30" : idx % 2 === 0 ? "hover:bg-muted/40" : "hover:bg-primary/5"}`}>
+                <TableCell className="font-semibold text-foreground/95 py-3.5">
+                  {canViewSales && user.role !== "administrator" ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSalesperson(user)}
+                      className="text-left text-primary hover:text-primary/80 hover:underline font-bold transition-colors"
+                    >
+                      {user.name}
+                    </button>
+                  ) : (
+                    <span className="font-semibold">{user.name}</span>
+                  )}
+                  {user.disabled && (
+                    <Badge variant="outline" className="ml-2 text-[10px] py-0.5 px-2 h-auto bg-destructive/10 text-destructive border-destructive/30 font-medium">Disabled</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm py-3.5 font-medium">{user.email}</TableCell>
+                <TableCell className="py-3.5">
+                  <Badge variant="outline" className={`border-0 text-xs font-semibold px-3 py-1 ${roleBadge[user.role]}`}>{roleLabel[user.role]}</Badge>
+                </TableCell>
+                <TableCell className="capitalize text-sm font-medium text-foreground/80 py-3.5">{user.department ? user.department.charAt(0).toUpperCase() + user.department.slice(1) : "—"}</TableCell>
+                <TableCell className="text-right py-3.5">
+                  <div className="inline-flex items-center gap-1.5">
+                    <Button variant="ghost" size="icon" className="action-btn h-8 w-8 hover:bg-primary/10 hover:text-primary transition-all" onClick={() => openEditUser(user)} disabled={user.disabled} title={user.disabled ? "Cannot edit disabled user" : "Edit user"}>
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-8 w-8 transition-all ${user.disabled ? "text-green-600 hover:bg-green-500/10 hover:text-green-700" : "text-amber-600 hover:bg-amber-500/10 hover:text-amber-700"}`}
+                      onClick={() => handleToggleStatus(user)}
+                      title={user.disabled ? "Enable User" : "Disable User"}
+                    >
+                      {user.disabled ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
             {filteredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground font-medium">No team members found matching your search</TableCell>
+                <TableCell colSpan={5} className="text-center py-12 text-muted-foreground font-medium">No team members found matching your search</TableCell>
               </TableRow>
             )}
           </TableBody>

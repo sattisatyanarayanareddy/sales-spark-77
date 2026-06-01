@@ -14,6 +14,9 @@ import { motion, Variants } from "framer-motion";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+
+const fmtCurrency = (v: number) => `$${(v || 0).toLocaleString()}`;
 
 const DashboardPage = () => {
   const { crmUser } = useAuth();
@@ -24,6 +27,7 @@ const DashboardPage = () => {
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [showAllManagers, setShowAllManagers] = useState(false);
+  const [rejectionRemarks, setRejectionRemarks] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!crmUser) return;
@@ -67,9 +71,17 @@ const DashboardPage = () => {
   };
 
   const handleReject = async (notificationId: string, quotationId: string) => {
+    const remarks = rejectionRemarks[notificationId]?.trim() || "";
+
+    if (!remarks) {
+      toast.error("Please enter rejection remarks before rejecting the quotation.");
+      return;
+    }
+
     setActionLoading(true);
     try {
-      await rejectQuotationDoc(notificationId, quotationId);
+      await rejectQuotationDoc(notificationId, quotationId, remarks);
+      setRejectionRemarks((prev) => ({ ...prev, [notificationId]: "" }));
       toast.success("Quotation rejected and marked as draft");
     } catch (e: any) {
       console.error(e);
@@ -156,6 +168,19 @@ const DashboardPage = () => {
       activeDeals: teamFunnels.filter((f) => !["Won", "Closed", "Cancelled", "Lost"].includes(f.status)).length,
       quotationValue: teamFunnels.reduce((sum, f) => sum + (f.quotationValue || 0), 0),
       poValue: teamFunnels.reduce((sum, f) => sum + (f.poValue || 0), 0),
+      paymentsReceived: teamFunnels.reduce((sum, f) => {
+        const inv = f.invoiceValue || 0;
+        const pending = f.pendingPayment ?? 0;
+        if (!inv) return sum;
+        if (f.paymentStatus === "Completed") return sum + inv;
+        if (f.paymentStatus === "Partial") return sum + Math.max(0, inv - pending);
+        return sum;
+      }, 0),
+      paymentBreakdown: {
+        completed: teamFunnels.reduce((s, f) => s + ((f.paymentStatus === "Completed" && (f.invoiceValue || 0)) || 0), 0),
+        partial: teamFunnels.reduce((s, f) => s + ((f.paymentStatus === "Partial" && Math.max(0, (f.invoiceValue || 0) - (f.pendingPayment ?? 0))) || 0), 0),
+        pending: teamFunnels.reduce((s, f) => s + ((f.paymentStatus === "Pending" && (f.pendingPayment || 0)) || 0), 0),
+      },
       wonDeals: teamFunnels.filter((f) => f.status === "Won").length,
     };
   };
@@ -219,8 +244,12 @@ const DashboardPage = () => {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <h3 className="font-semibold text-base">{m.name}</h3>
-                      <p className="text-xs text-muted-foreground">{m.department || "Sales Manager"}</p>
+                      <p className="text-base font-bold uppercase">{m.department || "SALES"}</p>
+                      <h3 className="text-sm text-muted-foreground mt-1">{m.name}</h3>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        <span className="mr-2">Payments:</span>
+                        <span className="font-medium text-emerald-600">{fmtCurrency(getManagerTeamStats(m.id).paymentsReceived)}</span>
+                      </div>
                     </div>
                     <Badge variant={isSelected ? "default" : "outline"} className="text-[10px] px-2 py-0.5">
                       {isSelected ? "Active Filter" : "Manager"}
@@ -239,6 +268,10 @@ const DashboardPage = () => {
                     <div className="mt-2">
                       <p className="text-muted-foreground/80 text-[11px]">PO Value</p>
                       <p className="font-bold text-sm text-amber-600 mt-1">${stats.poValue.toLocaleString()}</p>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-muted-foreground/80 text-[11px]">Payments Received</p>
+                      <p className="font-bold text-sm text-emerald-600 mt-1">${(stats.paymentsReceived || 0).toLocaleString()}</p>
                     </div>
                     <div className="mt-2">
                       <p className="text-muted-foreground/80 text-[11px]">Won Deals</p>
@@ -337,12 +370,31 @@ const DashboardPage = () => {
                     key={notif.id}
                     className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border border-primary/25 bg-card/80 hover:shadow-md transition-all gap-4"
                   >
-                    <div className="flex-1 space-y-1">
-                      <p className="font-semibold text-sm text-foreground">{notif.title}</p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{notif.message}</p>
-                      <p className="text-[10px] text-muted-foreground/80 mt-1">
-                        Requested: {notif.createdAt ? new Date(notif.createdAt).toLocaleString() : "Just now"}
-                      </p>
+                    <div className="flex-1 space-y-3">
+                      <div className="space-y-1">
+                        <p className="font-semibold text-sm text-foreground">{notif.title}</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{notif.message}</p>
+                        <p className="text-[10px] text-muted-foreground/80 mt-1">
+                          Requested: {notif.createdAt ? new Date(notif.createdAt).toLocaleString() : "Just now"}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-foreground">Rejection remarks</label>
+                        <Textarea
+                          placeholder="Enter rejection remarks for the salesperson"
+                          value={rejectionRemarks[notif.id] || ""}
+                          onChange={(event) =>
+                            setRejectionRemarks((prev) => ({
+                              ...prev,
+                              [notif.id]: event.target.value,
+                            }))
+                          }
+                          className="min-h-[84px] resize-none"
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Remarks are required before rejecting this quotation.
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 md:self-center">
                       <Button
@@ -357,7 +409,7 @@ const DashboardPage = () => {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={actionLoading}
+                        disabled={actionLoading || !rejectionRemarks[notif.id]?.trim()}
                         onClick={() => handleReject(notif.id, notif.quotationId)}
                         className="border-destructive/30 hover:bg-destructive/5 text-destructive h-8 text-xs flex items-center gap-1"
                       >

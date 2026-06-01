@@ -40,6 +40,7 @@ const QuotationsPage: React.FC = () => {
   const [viewQuotation, setViewQuotation] = useState<Quotation | null>(null);
   const [saving, setSaving] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
+  const deliveryStatusOptions = ["Pending", "Partial Delivery", "Delivered"] as const;
 
   const loadData = async () => {
     if (!crmUser) return;
@@ -61,9 +62,11 @@ const QuotationsPage: React.FC = () => {
 
   if (!crmUser) return null;
 
-  const editableStatusOptions = Object.entries(STATUS_LABELS).filter(
-    ([status]) => status !== "Approval Pending"
-  ) as [QuotationStatus, string][];
+  const editableStatusOptions: [QuotationStatus, string][] = [
+    ["Draft", "Draft"],
+    ["Created", "Created"],
+    ["Sent", "Sent"],
+  ];
 
   const filtered = quotations.filter((q) => {
     if (statusFilter !== "all" && q.status !== statusFilter) return false;
@@ -82,10 +85,12 @@ const QuotationsPage: React.FC = () => {
   const openEditQuotation = (quotation: Quotation) => {
     setEditQuotation({ ...quotation });
     setEditStatusDirty(false);
-    setEditStatusDraft(quotation.status === "Approval Pending" ? "Created" : quotation.status);
+    setEditStatusDraft(quotation.status);
   };
 
   const isStatusChangeLocked = editQuotation?.status === "Approval Pending";
+  const selectedStatus = editStatusDirty && editStatusDraft ? editStatusDraft : editQuotation?.status;
+  const canEditValues = selectedStatus === "Draft" || selectedStatus === "Created";
 
   const handleToggleStatus = async (id: string, currentDisabled: boolean) => {
     const newStatus = !currentDisabled;
@@ -130,6 +135,7 @@ const QuotationsPage: React.FC = () => {
       } else {
         await updateQuotationDoc(editQuotation.id, {
           status: statusToSave,
+          totalValue: editQuotation.totalValue,
           poNumber: editQuotation.poNumber,
           poValue: editQuotation.poValue,
           invoiceValue: editQuotation.invoiceValue,
@@ -148,6 +154,7 @@ const QuotationsPage: React.FC = () => {
               subject: editQuotation.subject,
               quotationValue: editQuotation.totalValue,
               followUpDate: editQuotation.followUpDate,
+                  remarks: editQuotation.followUpNotes || "",
               status: "Cold",
               poValue: editQuotation.poValue || 0,
               deliveryStatus: editQuotation.deliveryStatus || "Pending",
@@ -182,8 +189,10 @@ const QuotationsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const canDownloadPDF = viewQuotation?.status === "Sent";
+
   const handleDownloadPDF = async () => {
-    if (!viewQuotation) return;
+    if (!viewQuotation || !canDownloadPDF) return;
     setDownloadingPDF(true);
     try {
       await exportQuotationToPDF(viewQuotation);
@@ -285,8 +294,12 @@ const QuotationsPage: React.FC = () => {
                             size="icon"
                             className="action-btn"
                             onClick={() => openEditQuotation(q)}
-                            disabled={isQuotationDisabled}
-                            title={isQuotationDisabled ? "Cannot edit disabled quotation" : "Edit"}
+                            disabled={isQuotationDisabled || q.status === "Sent"}
+                            title={isQuotationDisabled
+                              ? "Cannot edit disabled quotation"
+                              : q.status === "Sent"
+                                ? "Cannot edit a sent quotation"
+                                : "Edit"}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -384,14 +397,16 @@ const QuotationsPage: React.FC = () => {
                 <p className="text-right font-bold mt-2">Total: {formatCurrency(viewQuotation.totalValue)}</p>
               </div>
               <div className="flex gap-2 pt-4 border-t">
-                <Button
-                  onClick={handleDownloadPDF}
-                  className="flex-1"
-                  disabled={downloadingPDF}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  {downloadingPDF ? "Generating PDF..." : "Download PDF"}
-                </Button>
+                {canDownloadPDF && (
+                  <Button
+                    onClick={handleDownloadPDF}
+                    className="flex-1"
+                    disabled={downloadingPDF}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    {downloadingPDF ? "Generating PDF..." : "Download PDF"}
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setViewQuotation(null)} className="flex-1">
                   Close
                 </Button>
@@ -413,29 +428,108 @@ const QuotationsPage: React.FC = () => {
           </DialogHeader>
           {editQuotation && (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select
-                  value={editStatusDraft ?? editQuotation.status}
-                  disabled={isStatusChangeLocked}
-                  onValueChange={(value) => {
-                    if (isStatusChangeLocked) return;
-                    setEditStatusDraft(value as QuotationStatus);
-                    setEditStatusDirty(true);
-                  }}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {editableStatusOptions.map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {isStatusChangeLocked && (
-                  <p className="text-xs text-muted-foreground">
-                    Status cannot be changed while the quotation is in approval pending.
-                  </p>
-                )}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={editStatusDraft ?? editQuotation.status}
+                    disabled={isStatusChangeLocked}
+                    onValueChange={(value) => {
+                      if (isStatusChangeLocked) return;
+                      setEditStatusDraft(value as QuotationStatus);
+                      setEditStatusDirty(true);
+                    }}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {isStatusChangeLocked && (
+                        <SelectItem value="Approval Pending">Approval Pending</SelectItem>
+                      )}
+                      {editableStatusOptions.map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {isStatusChangeLocked && (
+                    <p className="text-xs text-muted-foreground">
+                      Status cannot be changed while the quotation is in approval pending.
+                    </p>
+                  )}
+                  {!canEditValues && (
+                    <p className="text-xs text-muted-foreground">
+                      Quotation values can only be changed when status is Draft or Created.
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {editQuotation.poNumber ? (
+                    <div className="space-y-2">
+                      <Label>PO Number</Label>
+                      <Input
+                        value={editQuotation.poNumber}
+                        disabled={!canEditValues}
+                        onChange={(e) => setEditQuotation({ ...editQuotation, poNumber: e.target.value })}
+                      />
+                    </div>
+                  ) : null}
+                  {editQuotation.totalValue > 0 ? (
+                    <div className="space-y-2">
+                      <Label>Quotation Value</Label>
+                      <Input
+                        type="number"
+                        value={editQuotation.totalValue}
+                        disabled={!canEditValues}
+                        onChange={(e) => setEditQuotation({ ...editQuotation, totalValue: Number(e.target.value) || 0 })}
+                      />
+                    </div>
+                  ) : null}
+                  {editQuotation.poValue > 0 ? (
+                    <div className="space-y-2">
+                      <Label>PO Value</Label>
+                      <Input
+                        type="number"
+                        value={editQuotation.poValue}
+                        disabled={!canEditValues}
+                        onChange={(e) => setEditQuotation({ ...editQuotation, poValue: Number(e.target.value) || 0 })}
+                      />
+                    </div>
+                  ) : null}
+                  {editQuotation.invoiceValue > 0 ? (
+                    <div className="space-y-2">
+                      <Label>Invoice Value</Label>
+                      <Input
+                        type="number"
+                        value={editQuotation.invoiceValue}
+                        disabled={!canEditValues}
+                        onChange={(e) => setEditQuotation({ ...editQuotation, invoiceValue: Number(e.target.value) || 0 })}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {editQuotation.followUpDate ? (
+                    <div className="space-y-2">
+                      <Label>Follow Up Date</Label>
+                      <Input
+                        type="date"
+                        disabled={!canEditValues}
+                        value={editQuotation.followUpDate}
+                        onChange={(e) => setEditQuotation({ ...editQuotation, followUpDate: e.target.value || null })}
+                      />
+                    </div>
+                  ) : null}
+                  {editQuotation.followUpNotes ? (
+                    <div className="space-y-2">
+                      <Label>Follow Up Notes</Label>
+                      <Textarea
+                        value={editQuotation.followUpNotes}
+                        disabled={!canEditValues}
+                        onChange={(e) => setEditQuotation({ ...editQuotation, followUpNotes: e.target.value })}
+                        rows={3}
+                      />
+                    </div>
+                  ) : null}
+                </div>
               </div>
               {(() => {
                 const originalQuotation = quotations.find((q) => q.id === editQuotation.id);
@@ -449,7 +543,7 @@ const QuotationsPage: React.FC = () => {
                   <Button
                     onClick={saveUpdate}
                     className="w-full"
-                    disabled={saving || isStatusChangeLocked}
+                    disabled={saving}
                   >
                     {saving
                       ? "Saving..."

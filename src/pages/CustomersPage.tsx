@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { subscribeToCustomers, updateCustomerStatus, createCustomer } from "../lib/firestore-service";
+import { subscribeToCustomers, updateCustomerStatus, createCustomer, updateCustomerDoc } from "../lib/firestore-service";
 import { Customer } from "../types/crm";
-import { Plus, Lock, Unlock, Loader2 } from "lucide-react";
+import { Plus, Lock, Unlock, Loader2, Edit } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -30,7 +30,9 @@ const CustomersPage = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     companyName: "",
@@ -95,6 +97,40 @@ const CustomersPage = () => {
     } catch (error) {
       console.error("Error updating customer status:", error);
       toast.error(`Failed to ${actionText} customer`);
+    }
+  };
+
+  const openEditCustomer = (customer: Customer) => {
+    setEditingCustomer(customer);
+    setEditOpen(true);
+  };
+
+  const handleEditCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+
+    if (!editingCustomer.name || !editingCustomer.companyName || !editingCustomer.email || !editingCustomer.phone) {
+      toast.error("Name, Company Name, Email, and Phone are required");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await updateCustomerDoc(editingCustomer.id, {
+        name: editingCustomer.name,
+        companyName: editingCustomer.companyName,
+        email: editingCustomer.email,
+        phone: editingCustomer.phone,
+        department: editingCustomer.department,
+      });
+      setEditOpen(false);
+      setEditingCustomer(null);
+      toast.success("Customer updated successfully");
+    } catch (error) {
+      console.error("Error updating customer:", error);
+      toast.error("Failed to update customer");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -184,6 +220,72 @@ const CustomersPage = () => {
             </form>
           </DialogContent>
         </Dialog>
+        <Dialog open={editOpen} onOpenChange={(value) => {
+          setEditOpen(value);
+          if (!value) setEditingCustomer(null);
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Customer</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleEditCustomer} className="space-y-4">
+              <div>
+                <Label htmlFor="edit-name">Customer Name *</Label>
+                <Input
+                  id="edit-name"
+                  required
+                  value={editingCustomer?.name ?? ""}
+                  onChange={(e) => editingCustomer && setEditingCustomer({ ...editingCustomer, name: e.target.value })}
+                  placeholder="Enter customer name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-company">Company Name *</Label>
+                <Input
+                  id="edit-company"
+                  required
+                  value={editingCustomer?.companyName ?? ""}
+                  onChange={(e) => editingCustomer && setEditingCustomer({ ...editingCustomer, companyName: e.target.value })}
+                  placeholder="Enter company name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-email">Email *</Label>
+                <Input
+                  id="edit-email"
+                  required
+                  type="email"
+                  value={editingCustomer?.email ?? ""}
+                  onChange={(e) => editingCustomer && setEditingCustomer({ ...editingCustomer, email: e.target.value })}
+                  placeholder="Enter email"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-phone">Phone *</Label>
+                <Input
+                  id="edit-phone"
+                  required
+                  value={editingCustomer?.phone ?? ""}
+                  onChange={(e) => editingCustomer && setEditingCustomer({ ...editingCustomer, phone: e.target.value })}
+                  placeholder="Enter phone number"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-department">Department</Label>
+                <Input
+                  id="edit-department"
+                  value={editingCustomer?.department ?? ""}
+                  onChange={(e) => editingCustomer && setEditingCustomer({ ...editingCustomer, department: e.target.value })}
+                  placeholder="Enter department"
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={submitting || !editingCustomer}>
+                {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                {submitting ? "Saving changes..." : "Save Changes"}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <motion.div
@@ -229,15 +331,26 @@ const CustomersPage = () => {
                       <TableCell>{customer.phone || "—"}</TableCell>
                       <TableCell>{customer.department || "—"}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={isCustomerDisabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
-                          onClick={() => handleToggleStatus(customer.id, isCustomerDisabled)}
-                          title={isCustomerDisabled ? "Enable Customer" : "Disable Customer"}
-                        >
-                          {isCustomerDisabled ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-primary hover:bg-primary/10 hover:text-primary"
+                            onClick={() => openEditCustomer(customer)}
+                            title="Edit Customer"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={isCustomerDisabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
+                            onClick={() => handleToggleStatus(customer.id, isCustomerDisabled)}
+                            title={isCustomerDisabled ? "Enable Customer" : "Disable Customer"}
+                          >
+                            {isCustomerDisabled ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

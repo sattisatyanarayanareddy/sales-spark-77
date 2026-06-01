@@ -49,10 +49,16 @@ const mapSalesFunnel = (id: string, data: any): SalesFunnel => ({
   subject: data.subject || "",
   quotationValue: data.quotationValue || 0,
   followUpDate: data.followUpDate || null,
+  closingMonth: data.closingMonth || null,
+  closingYear: data.closingYear || null,
+  wonMonth: data.wonMonth || null,
+  remarks: data.remarks || "",
   status: data.status || "Hot",
   poValue: data.poValue || 0,
   deliveryStatus: data.deliveryStatus || "Pending",
   invoiceValue: data.invoiceValue || 0,
+  pendingPayment: data.pendingPayment || 0,
+  paymentStatus: data.paymentStatus || "Pending",
   salesPersonId: data.salesPersonId || "",
   createdAt: toDate(data.createdAt),
   updatedAt: toDate(data.updatedAt),
@@ -92,12 +98,18 @@ export function normalizeSalesFunnelPayload(
 ): Omit<SalesFunnel, "id" | "createdAt" | "updatedAt"> {
   const allowedDeliveryStatuses = ["Pending", "Partial Delivery", "Delivered"] as const;
   const allowedStatuses = ["Hot", "Warm", "Cold", "Closed", "Cancelled", "Lost", "Won"] as const;
+  const allowedPaymentStatuses = ["Pending", "Partial", "Completed"] as const;
 
   return {
     ...data,
     quotationValue: toNonNegativeNumber(data.quotationValue, "Quotation value"),
     poValue: toNonNegativeNumber(data.poValue, "PO value"),
     invoiceValue: toNonNegativeNumber(data.invoiceValue, "Invoice value"),
+    pendingPayment: toNonNegativeNumber(data.pendingPayment, "Pending payment"),
+    paymentStatus: allowedPaymentStatuses.includes(data.paymentStatus as (typeof allowedPaymentStatuses)[number])
+      ? data.paymentStatus
+      : "Pending",
+    remarks: data.remarks ?? "",
     deliveryStatus: allowedDeliveryStatuses.includes(data.deliveryStatus as (typeof allowedDeliveryStatuses)[number])
       ? data.deliveryStatus
       : "Pending",
@@ -105,6 +117,9 @@ export function normalizeSalesFunnelPayload(
       ? data.status
       : "Cold",
     followUpDate: data.followUpDate ?? null,
+    closingMonth: data.closingMonth ?? null,
+    closingYear: data.closingYear ?? null,
+    wonMonth: data.wonMonth ?? null,
   };
 }
 
@@ -351,24 +366,25 @@ export async function updateQuotationDoc(
 // ── Sales Funnel ──
 
 export async function fetchSalesFunnel(userId: string, role: UserRole): Promise<SalesFunnel[]> {
-  // Load everything and apply permissions filtering in client side to avoid composite index requirement
-  const snap = await getDocs(query(collection(db, "salesFunnel")));
-  const allFunnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
-
+  // For general managers, return all funnels so they can view team-wide data.
+  // For other roles (managers, sales), return only funnels belonging to the provided userId.
   if (role === "general_manager") {
+    const snap = await getDocs(query(collection(db, "salesFunnel")));
+    const allFunnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
     return allFunnels.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  // sub_manager sees ONLY their own funnel items (same as sales role)
-  // Use fetchTeamPerformanceData for drill-down views in Team Page
-  const ownIds = [userId];
-
-  return allFunnels
-    .filter((f) => {
-      // include fallback records created before salesPersonId existed
-      return !f.salesPersonId || ownIds.includes(f.salesPersonId);
-    })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // For sales and sub_manager (when drilling into a specific user), query only that user's funnels
+  try {
+    const q = query(collection(db, "salesFunnel"), where("salesPersonId", "==", userId));
+    const snap = await getDocs(q);
+    const funnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
+    return funnels.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  } catch (err) {
+    // Fallback: return empty array on error
+    console.error("fetchSalesFunnel error:", err);
+    return [];
+  }
 }
 
 export async function fetchSalesFunnelByQuotationId(quotationId: string): Promise<SalesFunnel | null> {
@@ -383,14 +399,30 @@ export async function createSalesFunnelDoc(data: Omit<SalesFunnel, "id" | "creat
   const poValue = toNonNegativeNumber(data.poValue, "PO value");
   const invoiceValue = toNonNegativeNumber(data.invoiceValue, "Invoice value");
   const quotationValue = toNonNegativeNumber(data.quotationValue, "Quotation value");
+  const pendingPayment = toNonNegativeNumber(data.pendingPayment, "Pending payment");
+  const paymentStatus = data.paymentStatus || "Pending";
 
   validateValueHierarchy(quotationValue, poValue, invoiceValue);
+  if (pendingPayment > invoiceValue) {
+    throw new Error("Pending payment cannot exceed Invoice value");
+  }
+  if (paymentStatus === "Pending" && pendingPayment !== invoiceValue) {
+    throw new Error("Pending payment must equal Invoice value when status is Pending");
+  }
+  if (paymentStatus === "Completed" && pendingPayment !== 0) {
+    throw new Error("Pending payment must be 0 when status is Completed");
+  }
+  if (paymentStatus === "Partial" && (pendingPayment <= 0 || pendingPayment >= invoiceValue)) {
+    throw new Error("Pending payment must be greater than 0 and less than Invoice value when status is Partial");
+  }
 
   const normalized = normalizeSalesFunnelPayload({
     ...data,
     poValue,
     invoiceValue,
     quotationValue,
+    pendingPayment,
+    paymentStatus,
   });
 
   const docRef = await addDoc(collection(db, "salesFunnel"), {
@@ -415,13 +447,29 @@ export async function updateSalesFunnelDoc(
   const quotationValue = toNonNegativeNumber(merged.quotationValue, "Quotation value");
   const poValue = toNonNegativeNumber(merged.poValue, "PO value");
   const invoiceValue = toNonNegativeNumber(merged.invoiceValue, "Invoice value");
+  const pendingPayment = toNonNegativeNumber(merged.pendingPayment, "Pending payment");
+  const paymentStatus = merged.paymentStatus || "Pending";
 
   validateValueHierarchy(quotationValue, poValue, invoiceValue);
+  if (pendingPayment > invoiceValue) {
+    throw new Error("Pending payment cannot exceed Invoice value");
+  }
+  if (paymentStatus === "Pending" && pendingPayment !== invoiceValue) {
+    throw new Error("Pending payment must equal Invoice value when status is Pending");
+  }
+  if (paymentStatus === "Completed" && pendingPayment !== 0) {
+    throw new Error("Pending payment must be 0 when status is Completed");
+  }
+  if (paymentStatus === "Partial" && (pendingPayment <= 0 || pendingPayment >= invoiceValue)) {
+    throw new Error("Pending payment must be greater than 0 and less than Invoice value when status is Partial");
+  }
   const normalized = normalizeSalesFunnelPayload({
     ...rest,
     quotationValue,
     poValue,
     invoiceValue,
+    pendingPayment,
+    paymentStatus,
   });
 
   await updateDoc(doc(db, "salesFunnel", id), {
@@ -442,21 +490,11 @@ export async function deleteQuotationDoc(id: string): Promise<void> {
 
 export async function fetchCustomers(userId: string, role: string): Promise<Customer[]> {
   try {
-    if (role === "general_manager" || role === "administrator") {
-      const snap = await getDocs(collection(db, "customers"));
-      return snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as Customer[];
-    } else {
-      // For both sub_manager (manager) and sales, only show customers they created themselves.
-      const q = query(collection(db, "customers"), where("createdBy", "==", userId));
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as Customer[];
-    }
+    const snap = await getDocs(collection(db, "customers"));
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as Customer[];
   } catch (error) {
     console.error("Error fetching customers:", error);
     return [];
@@ -500,20 +538,7 @@ export async function fetchProducts(userId: string, role: string, userDepartment
   try {
     const snap = await getDocs(collection(db, "items"));
     const allProducts = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
-
-    if (role === "general_manager" || role === "administrator") {
-      return allProducts;
-    }
-
-    const normalizedDepartment = userDepartment?.trim().toLowerCase() || "";
-    return allProducts.filter((p) => {
-      const productDepartment = (p.department || "").trim().toLowerCase();
-      if (productDepartment) {
-        return productDepartment === normalizedDepartment;
-      }
-
-      return p.createdBy === userId;
-    });
+    return allProducts;
   } catch (error) {
     console.error("Error fetching products:", error);
     return [];
@@ -1158,7 +1183,7 @@ export async function approveQuotationDoc(notificationId: string, quotationId: s
   });
 }
 
-export async function rejectQuotationDoc(notificationId: string, quotationId: string): Promise<void> {
+export async function rejectQuotationDoc(notificationId: string, quotationId: string, rejectionRemarks?: string): Promise<void> {
   // Update notification status
   await updateDoc(doc(db, "notifications", notificationId), {
     status: "rejected",
@@ -1178,11 +1203,16 @@ export async function rejectQuotationDoc(notificationId: string, quotationId: st
     updatedAt: serverTimestamp(),
   });
 
+  const trimmedRemarks = rejectionRemarks?.trim() || "";
+  const rejectionMessage = trimmedRemarks
+    ? `Your quotation ${quotation.quotationNumber} for ${quotation.companyName} ($${quotation.totalValue.toLocaleString()}) has been rejected. Remarks: ${trimmedRemarks}`
+    : `Your quotation ${quotation.quotationNumber} for ${quotation.companyName} ($${quotation.totalValue.toLocaleString()}) has been rejected.`;
+
   // Send rejected notification back to the salesperson
   await addDoc(collection(db, "notifications"), {
     type: "quotation_approval",
     title: "Quotation Rejected",
-    message: `Your quotation ${quotation.quotationNumber} for ${quotation.companyName} ($${quotation.totalValue.toLocaleString()}) has been rejected.`,
+    message: rejectionMessage,
     quotationId: quotationId,
     salespersonId: quotation.salesPersonId,
     salespersonName: quotation.salesPersonName,
@@ -1301,6 +1331,14 @@ export async function updateCustomerStatus(id: string, disabled: boolean): Promi
   });
 }
 
+export async function updateCustomerDoc(id: string, updates: Partial<Customer>): Promise<void> {
+  const { id: _id, createdAt: _createdAt, ...rest } = updates as any;
+  await updateDoc(doc(db, "customers", id), {
+    ...rest,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function updateProductStatus(id: string, disabled: boolean): Promise<void> {
   await updateDoc(doc(db, "items", id), {
     disabled,
@@ -1366,15 +1404,8 @@ export function subscribeToSalesFunnel(
   const q = collection(db, "salesFunnel");
   return onSnapshot(q, (snap) => {
     const allFunnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
-    let filtered: SalesFunnel[] = [];
-    if (role === "general_manager" || role === "administrator") {
-      filtered = allFunnels;
-    } else {
-      const ownIds = [userId];
-      filtered = allFunnels.filter((f) => !f.salesPersonId || ownIds.includes(f.salesPersonId));
-    }
-    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    callback(filtered);
+    allFunnels.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    callback(allFunnels);
   });
 }
 
@@ -1447,23 +1478,7 @@ export function subscribeToProducts(
   const qProducts = collection(db, "items");
   return onSnapshot(qProducts, (prodSnap) => {
     const allProducts = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[];
-
-    if (role === "general_manager" || role === "administrator") {
-      callback(allProducts);
-      return;
-    }
-
-    const normalizedDepartment = userDepartment?.trim().toLowerCase() || "";
-    const filtered = allProducts.filter((p) => {
-      const productDepartment = (p.department || "").trim().toLowerCase();
-      if (productDepartment) {
-        return productDepartment === normalizedDepartment;
-      }
-
-      return p.createdBy === userId;
-    });
-
-    callback(filtered);
+    callback(allProducts);
   });
 }
 
@@ -1478,13 +1493,7 @@ export function subscribeToCustomers(
       id: d.id,
       ...d.data(),
     })) as Customer[];
-    
-    let filtered: Customer[] = [];
-    if (role === "general_manager" || role === "administrator") {
-      filtered = allCustomers;
-    } else {
-      filtered = allCustomers.filter((c) => c.createdBy === userId);
-    }
-    callback(filtered);
+
+    callback(allCustomers);
   });
 }
