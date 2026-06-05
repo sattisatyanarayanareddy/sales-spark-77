@@ -1,13 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { createQuotationDoc, fetchCustomers, fetchProducts } from "@/lib/firestore-service";
-import { Product, Customer } from "@/types/crm";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  createQuotationDoc,
+  fetchCustomers,
+  fetchProducts,
+  fetchQuotationById,
+  updateQuotationDoc,
+  fetchSalesFunnelByQuotationId,
+  createSalesFunnelDoc,
+  requestQuotationApproval,
+} from "@/lib/firestore-service";
+import { getQuotationStatusForApprovalRequest } from "@/lib/quotation-status";
+import { Product, Customer, Quotation, QuotationStatus } from "@/types/crm";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Trash2, Plus, Check, ChevronsUpDown, AlertCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Select,
@@ -23,11 +33,17 @@ import { cn } from "@/lib/utils";
 const CreateQuotationPage: React.FC = () => {
   const { crmUser } = useAuth();
   const navigate = useNavigate();
+  const { id: quotationId } = useParams<{ id: string }>();
+  const isEditMode = Boolean(quotationId);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<QuotationStatus>("Created");
+  const [originalQuotation, setOriginalQuotation] = useState<Quotation | null>(null);
+  // Salesperson sees: Draft, Created, Ask for Approve, Sent Mail (not Approved - that's manager-only)
+  const quotationStatusOptions = ["Draft", "Created", "Ask for Approve", "Sent Mail"] as const;
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -47,8 +63,62 @@ const CreateQuotationPage: React.FC = () => {
           fetchCustomers(crmUser.id, crmUser.role),
           fetchProducts(crmUser.id, crmUser.role, crmUser.department),
         ]);
+
         setCustomers(customersData.filter((c) => !c.disabled));
         setAvailableProducts(productsData.filter((p) => !p.disabled));
+
+        if (quotationId) {
+          const quotation = await fetchQuotationById(quotationId);
+          if (!quotation) {
+            toast.error("Quotation not found");
+            navigate("/quotations");
+            return;
+          }
+
+          setOriginalQuotation(quotation);
+          setStatus(quotation.status);
+          setSubject(quotation.subject);
+
+          const matchedCustomer = customersData.find(
+            (customer) =>
+              customer.email === quotation.customerEmail ||
+              customer.companyName === quotation.companyName ||
+              customer.name === quotation.customerName
+          );
+
+          if (matchedCustomer) {
+            setSelectedCustomer(matchedCustomer);
+          } else {
+            setSelectedCustomer({
+              id: quotation.customerEmail || quotation.companyName || quotation.customerName,
+              name: quotation.customerName,
+              email: quotation.customerEmail,
+              phone: quotation.customerPhone,
+              companyName: quotation.companyName,
+              department: "",
+              createdBy: "",
+              userEmail: "",
+            });
+          }
+
+          const loadedProducts = quotation.products.map((product) => ({
+            product,
+            quantity: product.quantity || 1,
+          }));
+          setSelectedProducts(loadedProducts);
+          setSelectedProductQuantities(
+            loadedProducts.reduce((acc, item) => {
+              acc[item.product.id] = String(item.quantity);
+              return acc;
+            }, {} as Record<string, string>)
+          );
+          setTableQuantityStrings(
+            loadedProducts.reduce((acc, item) => {
+              acc[item.product.id] = String(item.quantity);
+              return acc;
+            }, {} as Record<string, string>)
+          );
+        }
       } catch (error) {
         console.error("Error loading data:", error);
         toast.error("Failed to load customers and items");
@@ -57,7 +127,7 @@ const CreateQuotationPage: React.FC = () => {
       }
     };
     loadData();
-  }, [crmUser]);
+  }, [crmUser, quotationId, navigate]);
 
   if (!crmUser) return null;
 
@@ -170,38 +240,100 @@ const CreateQuotationPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      await createQuotationDoc({
-        customerName: selectedCustomer.name,
-        companyName: selectedCustomer.companyName,
-        customerEmail: selectedCustomer.email,
-        customerPhone: selectedCustomer.phone,
-        subject,
-        salesPersonId: crmUser.id,
-        salesPersonName: crmUser.name,
-        salesPersonSignature: crmUser.signature,
-        salesPersonDesignation: crmUser.designation || "",
-        salesPersonCompany: crmUser.companyName || "",
-        managerId: crmUser.managerId || "",
-        products: selectedProducts.map(item => ({
-          ...item.product,
-          quantity: item.quantity,
-          totalValue: item.product.value * item.quantity
-        })),
-        totalValue,
-        status: "Created",
-        poNumber: "",
-        poValue: 0,
-        invoiceValue: 0,
-        followUpDate: null,
-        followUpNotes: "",
-        deliveryStatus: "Pending",
-      });
+      const products = selectedProducts.map((item) => ({
+        ...item.product,
+        quantity: item.quantity,
+        totalValue: item.product.value * item.quantity,
+      }));
 
-      toast.success("Quotation created successfully!");
+      if (isEditMode && quotationId && originalQuotation) {
+        const statusToSave = status;
+        const isSalesperson = crmUser.role === "sales";
+        const requestApproval = isSalesperson && statusToSave === "Ask for Approve" && originalQuotation.status !== "Ask for Approve";
+
+        await updateQuotationDoc(quotationId, {
+          customerName: selectedCustomer.name,
+          companyName: selectedCustomer.companyName,
+          customerEmail: selectedCustomer.email,
+          customerPhone: selectedCustomer.phone,
+          subject,
+          products,
+          totalValue,
+          status: statusToSave,
+          poNumber: originalQuotation.poNumber,
+          poValue: originalQuotation.poValue,
+          invoiceValue: originalQuotation.invoiceValue,
+          followUpDate: originalQuotation.followUpDate,
+          followUpNotes: originalQuotation.followUpNotes,
+          deliveryStatus: originalQuotation.deliveryStatus,
+        });
+
+        if (requestApproval) {
+          await requestQuotationApproval({
+            ...originalQuotation,
+            customerName: selectedCustomer.name,
+            companyName: selectedCustomer.companyName,
+            customerEmail: selectedCustomer.email,
+            customerPhone: selectedCustomer.phone,
+            subject,
+            products,
+            totalValue,
+            status: statusToSave,
+          });
+          toast.success("Quotation submitted for manager approval");
+        } else {
+          if ((statusToSave === "Approved" || statusToSave === "Sent Mail") && originalQuotation.status !== "Approved") {
+            const existingFunnel = await fetchSalesFunnelByQuotationId(quotationId);
+            if (!existingFunnel) {
+              await createSalesFunnelDoc({
+                quotationId,
+                quotationNumber: originalQuotation.quotationNumber,
+                companyName: selectedCustomer.companyName,
+                subject,
+                quotationValue: totalValue,
+                followUpDate: originalQuotation.followUpDate,
+                remarks: originalQuotation.followUpNotes || "",
+                status: "Cold",
+                poValue: originalQuotation.poValue || 0,
+                deliveryStatus: originalQuotation.deliveryStatus || "Pending",
+                invoiceValue: originalQuotation.invoiceValue || 0,
+                salesPersonId: originalQuotation.salesPersonId,
+              });
+            }
+          }
+          toast.success("Quotation updated successfully!");
+        }
+      } else {
+        await createQuotationDoc({
+          customerName: selectedCustomer.name,
+          companyName: selectedCustomer.companyName,
+          customerEmail: selectedCustomer.email,
+          customerPhone: selectedCustomer.phone,
+          subject,
+          salesPersonId: crmUser.id,
+          salesPersonName: crmUser.name,
+          salesPersonSignature: crmUser.signature,
+          salesPersonDesignation: crmUser.designation || "",
+          salesPersonCompany: crmUser.companyName || "",
+          managerId: crmUser.managerId || "",
+          products,
+          totalValue,
+          status: "Created",
+          poNumber: "",
+          poValue: 0,
+          invoiceValue: 0,
+          followUpDate: null,
+          followUpNotes: "",
+          deliveryStatus: "Pending",
+        });
+
+        toast.success("Quotation created successfully!");
+      }
+
       navigate("/quotations");
     } catch (error) {
-      console.error("Error creating quotation:", error);
-      toast.error("Failed to create quotation");
+      console.error("Error saving quotation:", error);
+      toast.error("Failed to save quotation");
     } finally {
       setSubmitting(false);
     }
@@ -217,7 +349,7 @@ const CreateQuotationPage: React.FC = () => {
 
   return (
     <div className="page-container max-w-2xl">
-      <h2 className="section-title mb-6">Create New Quotation</h2>
+      <h2 className="section-title mb-6">{isEditMode ? "Edit Quotation" : "Create New Quotation"}</h2>
 
       {!crmUser.signature && (
         <Card className="p-4 mb-6 border-amber-200 bg-amber-50">
@@ -247,7 +379,7 @@ const CreateQuotationPage: React.FC = () => {
           <h3 className="font-display font-semibold mb-4">Select Customer</h3>
           <div className="space-y-2">
             <Label>Customer *</Label>
-            <Select onValueChange={handleSelectCustomer}>
+            <Select value={selectedCustomer?.id ?? ""} onValueChange={handleSelectCustomer}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a customer..." />
               </SelectTrigger>
@@ -296,6 +428,23 @@ const CreateQuotationPage: React.FC = () => {
               required
             />
           </div>
+          {isEditMode && (
+            <div className="mt-6 space-y-2">
+              <Label>Status *</Label>
+              <Select value={status} onValueChange={(value) => setStatus(value as QuotationStatus)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {quotationStatusOptions.map((statusOption) => (
+                    <SelectItem key={statusOption} value={statusOption}>
+                      {statusOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </Card>
 
         {/* Product Selection */}
@@ -529,7 +678,7 @@ const CreateQuotationPage: React.FC = () => {
         {/* Submit Button */}
         <div className="flex gap-3">
           <Button type="submit" disabled={submitting} className="flex-1">
-            {submitting ? "Creating..." : "Create Quotation"}
+            {submitting ? (originalQuotation ? "Updating..." : "Creating...") : (originalQuotation ? "Update Quotation" : "Create Quotation")}
           </Button>
           <Button type="button" variant="outline" onClick={() => navigate("/quotations")}>
             Cancel

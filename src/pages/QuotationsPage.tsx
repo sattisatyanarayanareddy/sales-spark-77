@@ -40,6 +40,12 @@ const QuotationsPage: React.FC = () => {
   const [viewQuotation, setViewQuotation] = useState<Quotation | null>(null);
   const [saving, setSaving] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
+  const [emailDraftOpen, setEmailDraftOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailCc, setEmailCc] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
   const deliveryStatusOptions = ["Pending", "Partial Delivery", "Delivered"] as const;
 
   const loadData = async () => {
@@ -60,13 +66,28 @@ const QuotationsPage: React.FC = () => {
     loadData();
   }, [crmUser]);
 
+  useEffect(() => {
+    if (!viewQuotation || !crmUser) {
+      setEmailDraftOpen(false);
+      return;
+    }
+
+    setEmailTo(viewQuotation.customerEmail || "");
+    setEmailCc("");
+    setEmailSubject(`Sales Quotation ${viewQuotation.quotationNumber} from ${crmUser.name}`);
+    setEmailBody(`Dear ${viewQuotation.customerName},\n\nPlease find attached our quotation ${viewQuotation.quotationNumber} for ${viewQuotation.companyName}. We hope this proposal meets your requirements. If you have any questions or need any changes, please let us know.\n\nBest regards,\n${crmUser.name}${crmUser.designation ? `\n${crmUser.designation}` : ""}${crmUser.companyName ? `\n${crmUser.companyName}` : ""}`);
+  }, [viewQuotation, crmUser]);
+
   if (!crmUser) return null;
 
   const editableStatusOptions: [QuotationStatus, string][] = [
     ["Draft", "Draft"],
     ["Created", "Created"],
-    ["Sent", "Sent"],
+    ["Ask for Approve", "Ask for Approve"],
   ];
+
+  // If quotation is already Approved by manager, allow salesperson to send it via email
+  const canTransitionToSentMail = editQuotation?.status === "Approved";
 
   const filtered = quotations.filter((q) => {
     if (statusFilter !== "all" && q.status !== statusFilter) return false;
@@ -88,7 +109,7 @@ const QuotationsPage: React.FC = () => {
     setEditStatusDraft(quotation.status);
   };
 
-  const isStatusChangeLocked = editQuotation?.status === "Approval Pending";
+  const isStatusChangeLocked = editQuotation?.status === "Ask for Approve";
   const selectedStatus = editStatusDirty && editStatusDraft ? editStatusDraft : editQuotation?.status;
   const canEditValues = selectedStatus === "Draft" || selectedStatus === "Created";
 
@@ -113,12 +134,11 @@ const QuotationsPage: React.FC = () => {
       const original = quotations.find((q) => q.id === editQuotation.id);
       const statusToSave = editStatusDirty && editStatusDraft ? editStatusDraft : editQuotation.status;
       const isSalesperson = crmUser.role === "sales";
-      const wasNotSent = original ? original.status !== "Sent" : true;
-      const isTryingToSend = statusToSave === "Sent";
+      const requestApproval = isSalesperson && statusToSave === "Ask for Approve" && original?.status !== "Ask for Approve";
 
-      if (isSalesperson && wasNotSent && isTryingToSend) {
+      if (requestApproval) {
         await updateQuotationDoc(editQuotation.id, {
-          status: getQuotationStatusForApprovalRequest(statusToSave),
+          status: statusToSave,
           poNumber: editQuotation.poNumber,
           poValue: editQuotation.poValue,
           invoiceValue: editQuotation.invoiceValue,
@@ -129,7 +149,7 @@ const QuotationsPage: React.FC = () => {
 
         await requestQuotationApproval({
           ...editQuotation,
-          status: getQuotationStatusForApprovalRequest(statusToSave),
+          status: statusToSave,
         });
         toast.success("Quotation submitted for manager approval");
       } else {
@@ -144,7 +164,7 @@ const QuotationsPage: React.FC = () => {
           deliveryStatus: editQuotation.deliveryStatus,
         });
 
-        if (statusToSave === "Sent") {
+        if ((statusToSave === "Approved" || statusToSave === "Sent Mail") && original?.status !== "Approved") {
           const existingFunnel = await fetchSalesFunnelByQuotationId(editQuotation.id);
           if (!existingFunnel) {
             await createSalesFunnelDoc({
@@ -154,7 +174,7 @@ const QuotationsPage: React.FC = () => {
               subject: editQuotation.subject,
               quotationValue: editQuotation.totalValue,
               followUpDate: editQuotation.followUpDate,
-                  remarks: editQuotation.followUpNotes || "",
+              remarks: editQuotation.followUpNotes || "",
               status: "Cold",
               poValue: editQuotation.poValue || 0,
               deliveryStatus: editQuotation.deliveryStatus || "Pending",
@@ -189,7 +209,30 @@ const QuotationsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const canDownloadPDF = viewQuotation?.status === "Sent";
+  const handleSendEmail = async () => {
+    if (!viewQuotation) return;
+    if (!emailTo.trim()) {
+      toast.error("Please enter a recipient email address.");
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      await updateQuotationDoc(viewQuotation.id, { status: "Sent Mail" });
+      setViewQuotation({ ...viewQuotation, status: "Sent Mail" });
+      toast.success("Quotation marked as Sent Mail. Your email draft is opening.");
+
+      const mailto = `mailto:${encodeURIComponent(emailTo)}?cc=${encodeURIComponent(emailCc)}&subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+      window.location.href = mailto;
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to prepare email draft");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const canDownloadPDF = viewQuotation?.status === "Approved" || viewQuotation?.status === "Sent Mail";
 
   const handleDownloadPDF = async () => {
     if (!viewQuotation || !canDownloadPDF) return;
@@ -217,96 +260,135 @@ const QuotationsPage: React.FC = () => {
 
   return (
     <div className="page-container space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h2 className="section-title">Quotations</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-48" />
+      {/* ── Page Header ── */}
+      <div className="dashboard-hero p-5 md:p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 className="section-title">Quotations</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {filtered.length} quotation{filtered.length !== 1 ? "s" : ""}{statusFilter !== "all" ? ` · ${statusFilter}` : ""}
+            </p>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              {editableStatusOptions.map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-1" /> Export
-          </Button>
-          {canCreateQuotation(crmUser.role) && (
-            <Button size="sm" onClick={() => navigate("/quotations/new")}>
-              <Plus className="w-4 h-4 mr-1" /> New Quotation
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search quotations…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 w-52 h-9 rounded-xl bg-card/80 border-border/50 text-sm"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36 h-9 rounded-xl text-sm">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {editableStatusOptions.map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={handleExport} className="h-9 rounded-xl gap-1.5 text-sm">
+              <Download className="w-3.5 h-3.5" /> Export
             </Button>
-          )}
+            {canCreateQuotation(crmUser.role) && (
+              <Button size="sm" onClick={() => navigate("/quotations/new")} className="h-9 rounded-xl gap-1.5 btn-gradient text-sm">
+                <Plus className="w-3.5 h-3.5" /> New Quotation
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="stat-card p-0 overflow-hidden">
+      {/* ── Quotations Table ── */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+        className="dashboard-panel overflow-hidden p-0"
+      >
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="enhanced-table">
             <TableHeader>
-              <TableRow>
-                <TableHead>Quotation No</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead className="text-right">Value</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+              <TableRow className="border-b border-border/60">
+                <TableHead className="pl-6 py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quotation No</TableHead>
+                <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer</TableHead>
+                <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subject</TableHead>
+                <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground text-right">Value</TableHead>
+                <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</TableHead>
+                <TableHead className="pr-6 py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No quotations found</TableCell>
+                  <TableCell colSpan={6} className="text-center py-16">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <Search className="w-8 h-8 opacity-30" />
+                      <p className="font-medium text-sm">No quotations found</p>
+                      <p className="text-xs">Try adjusting your search or filter</p>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((q) => {
                   const isQuotationDisabled = !!q.disabled;
                   return (
-                    <TableRow key={q.id} className={isQuotationDisabled ? "opacity-60 bg-muted/10" : ""}>
-                      <TableCell className="font-mono text-xs">
+                    <TableRow
+                      key={q.id}
+                      className={`border-b border-border/30 transition-colors duration-150 ${isQuotationDisabled ? "opacity-50" : ""}`}
+                    >
+                      <TableCell className="pl-6 py-4">
                         <div className="flex items-center gap-2">
-                          {q.quotationNumber}
+                          <span className="font-mono text-xs font-semibold text-foreground/80 bg-muted/60 px-2 py-0.5 rounded-md">
+                            {q.quotationNumber}
+                          </span>
                           {isQuotationDisabled && (
-                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 bg-destructive/10 text-destructive border-destructive/20 font-semibold">
+                            <Badge variant="outline" className="text-[9px] py-0 px-1.5 h-4 bg-destructive/10 text-destructive border-destructive/20 font-semibold">
                               Disabled
                             </Badge>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <p className="font-medium text-sm">{q.customerName}</p>
-                        <p className="text-xs text-muted-foreground">{q.companyName}</p>
+                      <TableCell className="py-4">
+                        <p className="font-semibold text-sm text-foreground">{q.customerName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{q.companyName}</p>
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate text-sm">{q.subject}</TableCell>
-                      <TableCell className="text-right font-medium">{formatCurrency(q.totalValue)}</TableCell>
-                      <TableCell><StageBadge stage={q.status} /></TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="py-4 max-w-[200px]">
+                        <p className="text-sm text-foreground/80 truncate">{q.subject}</p>
+                      </TableCell>
+                      <TableCell className="py-4 text-right">
+                        <span className="font-bold text-sm text-foreground">{formatCurrency(q.totalValue)}</span>
+                      </TableCell>
+                      <TableCell className="py-4"><StageBadge stage={q.status} /></TableCell>
+                      <TableCell className="pr-6 py-4">
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="action-btn" onClick={() => setViewQuotation(q)}>
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
+                            onClick={() => setViewQuotation(q)}
+                            title="View details"
+                          >
                             <Eye className="w-4 h-4" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="action-btn"
-                            onClick={() => openEditQuotation(q)}
-                            disabled={isQuotationDisabled || q.status === "Sent"}
-                            title={isQuotationDisabled
-                              ? "Cannot edit disabled quotation"
-                              : q.status === "Sent"
-                                ? "Cannot edit a sent quotation"
-                                : "Edit"}
+                            variant="ghost" size="icon"
+                            className="h-8 w-8 rounded-lg hover:bg-amber-500/10 hover:text-amber-600 transition-colors"
+                            onClick={() => {
+                              // Route to email sending page for Approved quotations
+                              if (q.status === "Approved") {
+                                navigate(`/quotations/send-email/${q.id}`);
+                              } else {
+                                navigate(`/quotations/edit/${q.id}`);
+                              }
+                            }}
+                            disabled={isQuotationDisabled || q.status === "Ask for Approve" || q.status === "Sent Mail"}
+                            title={isQuotationDisabled ? "Cannot edit disabled quotation" : (q.status === "Ask for Approve" || q.status === "Sent Mail") ? "Cannot edit quotation in its current status" : (q.status === "Approved" ? "Send email" : "Edit")}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className={isQuotationDisabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
+                            variant="ghost" size="icon"
+                            className={`h-8 w-8 rounded-lg transition-colors ${isQuotationDisabled ? "hover:bg-emerald-500/10 hover:text-emerald-600 text-emerald-500" : "hover:bg-orange-500/10 hover:text-orange-600 text-orange-500"}`}
                             onClick={() => handleToggleStatus(q.id, isQuotationDisabled)}
                             title={isQuotationDisabled ? "Enable Quotation" : "Disable Quotation"}
                           >
@@ -396,8 +478,68 @@ const QuotationsPage: React.FC = () => {
                 </Table>
                 <p className="text-right font-bold mt-2">Total: {formatCurrency(viewQuotation.totalValue)}</p>
               </div>
+              {(viewQuotation.status === "Approved" || viewQuotation.status === "Sent Mail") && (
+                <div className="rounded-2xl border border-border/70 bg-card p-4 mb-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">Send email with quotation PDF</p>
+                        <p className="text-xs text-muted-foreground">Use the default template below, then open your mail client to attach the PDF.</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEmailDraftOpen((prev) => !prev)}
+                      >
+                        {emailDraftOpen ? "Hide draft" : viewQuotation.status === "Sent Mail" ? "Review draft" : "Open draft"}
+                      </Button>
+                    </div>
+
+                    {emailDraftOpen && (
+                      <div className="space-y-3">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>To</Label>
+                            <Input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>CC</Label>
+                            <Input value={emailCc} onChange={(e) => setEmailCc(e.target.value)} placeholder="sales@example.com, manager@example.com" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Subject</Label>
+                          <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Message</Label>
+                          <Textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={8} />
+                        </div>
+                        <div className="flex flex-col gap-2 md:flex-row">
+                          <Button
+                            onClick={handleSendEmail}
+                            className="flex-1"
+                            disabled={sendingEmail}
+                          >
+                            {sendingEmail ? "Preparing mail..." : "Send Email Draft"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={handleDownloadPDF}
+                            disabled={downloadingPDF}
+                            className="flex-1"
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            {downloadingPDF ? "Generating PDF..." : "Download PDF"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2 pt-4 border-t">
-                {canDownloadPDF && (
+                {canDownloadPDF && !emailDraftOpen && (
                   <Button
                     onClick={handleDownloadPDF}
                     className="flex-1"
@@ -442,22 +584,32 @@ const QuotationsPage: React.FC = () => {
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {isStatusChangeLocked && (
-                        <SelectItem value="Approval Pending">Approval Pending</SelectItem>
+                      {canTransitionToSentMail ? (
+                        // Manager approved → only allow sending email via SendEmailPage, not in this dialog
+                        <>
+                          <SelectItem value="Sent Mail" disabled>Sent Mail (use Send Email button)</SelectItem>
+                        </>
+                      ) : (
+                        // Draft/Created/Ask for Approve workflow
+                        editableStatusOptions.map(([k, v]) => (
+                          <SelectItem key={k} value={k}>{v}</SelectItem>
+                        ))
                       )}
-                      {editableStatusOptions.map(([k, v]) => (
-                        <SelectItem key={k} value={k}>{v}</SelectItem>
-                      ))}
                     </SelectContent>
                   </Select>
                   {isStatusChangeLocked && (
                     <p className="text-xs text-muted-foreground">
-                      Status cannot be changed while the quotation is in approval pending.
+                      Status cannot be changed while the quotation is in Ask for Approve.
                     </p>
                   )}
-                  {!canEditValues && (
+                  {!canEditValues && !canTransitionToSentMail && (
                     <p className="text-xs text-muted-foreground">
                       Quotation values can only be changed when status is Draft or Created.
+                    </p>
+                  )}
+                  {canTransitionToSentMail && (
+                    <p className="text-xs text-muted-foreground">
+                      Manager has approved this quotation. You can now send it via email.
                     </p>
                   )}
                 </div>
@@ -536,8 +688,9 @@ const QuotationsPage: React.FC = () => {
                 const selectedStatus = editStatusDirty && editStatusDraft ? editStatusDraft : editQuotation.status;
                 const isSalespersonApprovalFlow =
                   crmUser.role === "sales" &&
-                  selectedStatus === "Sent" &&
-                  originalQuotation?.status !== "Sent";
+                  selectedStatus === "Ask for Approve" &&
+                  originalQuotation?.status !== "Ask for Approve";
+                const isSendingEmail = selectedStatus === "Sent Mail" && originalQuotation?.status === "Approved";
 
                 return (
                   <Button
@@ -548,7 +701,9 @@ const QuotationsPage: React.FC = () => {
                     {saving
                       ? "Saving..."
                       : isSalespersonApprovalFlow
-                        ? "Send quotation for manager approval"
+                        ? "Request manager approval"
+                        : isSendingEmail
+                        ? "Mark as Sent Mail"
                         : "Save Changes"}
                   </Button>
                 );

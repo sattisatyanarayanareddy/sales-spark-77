@@ -324,7 +324,7 @@ export async function requestQuotationApproval(quotation: Quotation): Promise<vo
   await addDoc(collection(db, "notifications"), {
     type: "quotation_approval",
     title: "Quotation Pending Approval",
-    message: `${quotation.salesPersonName} requested approval for quotation ${quotation.quotationNumber} for ${quotation.companyName} ($${quotation.totalValue.toLocaleString()}) to be Sent.`,
+    message: `${quotation.salesPersonName} requested manager approval for quotation ${quotation.quotationNumber} for ${quotation.companyName} ($${quotation.totalValue.toLocaleString()}).`,
     quotationId: quotation.id,
     salespersonId: quotation.salesPersonId,
     salespersonName: quotation.salesPersonName,
@@ -878,7 +878,7 @@ export function exportTeamPerformanceToCSV(rows: TeamPerformanceRow[]): string {
 
 // ── PDF Export ──
 
-export async function exportQuotationToPDF(quotation: Quotation): Promise<void> {
+export async function exportQuotationToPDF(quotation: Quotation, returnBase64 = false): Promise<string | void> {
   const { jsPDF } = await import("jspdf");
   const html2canvas = (await import("html2canvas")).default;
 
@@ -994,6 +994,7 @@ export async function exportQuotationToPDF(quotation: Quotation): Promise<void> 
 
   document.body.appendChild(container);
 
+  let returnValue: string | void = undefined;
   try {
     const images = Array.from(container.querySelectorAll("img"));
     await Promise.all(
@@ -1047,9 +1048,24 @@ export async function exportQuotationToPDF(quotation: Quotation): Promise<void> 
       });
     }
 
-    pdf.save(`${quotation.quotationNumber}.pdf`);
+    // If caller requested the PDF as base64, return it instead of forcing a download
+    const pdfBlob = pdf.output("blob");
+    if (returnBase64) {
+      const arrayBuffer = await pdfBlob.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(arrayBuffer);
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      returnValue = btoa(binary);
+    } else {
+      pdf.save(`${quotation.quotationNumber}.pdf`);
+    }
   } finally {
     document.body.removeChild(container);
+    return returnValue;
   }
 }
 
@@ -1142,9 +1158,9 @@ export async function approveQuotationDoc(notificationId: string, quotationId: s
     throw new Error("Quotation not found");
   }
 
-  // Update quotation status to Sent
+  // Update quotation status to Approved
   await updateDoc(doc(db, "quotations", quotationId), {
-    status: "Sent",
+    status: "Approved",
     updatedAt: serverTimestamp(),
   });
 
@@ -1401,7 +1417,18 @@ export function subscribeToSalesFunnel(
   role: string,
   callback: (funnels: SalesFunnel[]) => void
 ): () => void {
-  const q = collection(db, "salesFunnel");
+  let q;
+  if (role === "general_manager" || role === "administrator" || role === "sub_manager") {
+    // Managers and admins see all sales funnels
+    q = collection(db, "salesFunnel");
+  } else if (role === "sales") {
+    // Salespeople only see their own sales funnel entries
+    q = query(collection(db, "salesFunnel"), where("salesPersonId", "==", userId));
+  } else {
+    // Default to filtering by salesPersonId
+    q = query(collection(db, "salesFunnel"), where("salesPersonId", "==", userId));
+  }
+
   return onSnapshot(q, (snap) => {
     const allFunnels = snap.docs.map((d) => mapSalesFunnel(d.id, d.data()));
     allFunnels.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { BarChart3, AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -14,7 +14,6 @@ const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const location = useLocation();
@@ -22,20 +21,40 @@ const LoginPage: React.FC = () => {
 
   const from = (location.state as any)?.from?.pathname || "/dashboard";
 
+  const getAuthErrorMessage = (err: any) => {
+    if (!err) return "Login failed. Please check your credentials and try again.";
+    if (err.code) {
+      switch (err.code) {
+        case "auth/invalid-credential":
+        case "auth/wrong-password":
+        case "auth/user-not-found":
+        case "auth/invalid-email":
+          return "Invalid email or password. Please try again.";
+        case "auth/too-many-requests":
+          return "Too many login attempts. Please wait and try again later.";
+        case "auth/user-disabled":
+          return "Your account has been disabled. Contact support for help.";
+        default:
+          break;
+      }
+    }
+
+    const message = err.message || String(err);
+    return message.replace(/^Firebase:\s*/i, "").replace(/^Error\s*\(/i, "").replace(/\)\.?$/, "") || "Login failed. Please check your credentials and try again.";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError("Please enter both email and password");
+      toast.error("Please enter both email and password");
       return;
     }
-    setError("");
     setLoading(true);
     try {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err: any) {
-      const errorMsg = err.message || "Login failed. Please check your credentials and try again.";
-      setError(errorMsg);
+      const errorMsg = getAuthErrorMessage(err);
       toast.error(errorMsg);
     } finally {
       setLoading(false);
@@ -112,12 +131,6 @@ const LoginPage: React.FC = () => {
               </div>
             </div>
 
-            {error && (
-              <div className="flex items-start gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/30 animate-in fade-in slide-in-from-top-2 duration-300">
-                <AlertCircle className="w-5 h-5 shrink-0 text-destructive mt-0.5" />
-                <span className="text-sm text-destructive font-medium">{error}</span>
-              </div>
-            )}
 
             <Button type="submit" className="w-full h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-semibold rounded-xl transition-all duration-200" disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

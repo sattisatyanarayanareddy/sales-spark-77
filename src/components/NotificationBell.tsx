@@ -140,7 +140,7 @@ export const NotificationBell: React.FC = () => {
       // Update local state to reflect approved status immediately
       setSelectedQuotation({
         ...selectedQuotation,
-        status: "Sent",
+        status: "Approved",
       });
     } catch (e: any) {
       console.error(e);
@@ -178,7 +178,7 @@ export const NotificationBell: React.FC = () => {
     }
   };
 
-  const canDownloadPDF = selectedQuotation?.status === "Sent";
+  const canDownloadPDF = selectedQuotation?.status === "Approved" || selectedQuotation?.status === "Sent Mail";
 
   const handleDownloadPDF = async () => {
     if (!selectedQuotation || !canDownloadPDF) return;

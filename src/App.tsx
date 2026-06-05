@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { Toaster } from "./components/ui/toaster";
-import { Toaster as Sonner } from "./components/ui/sonner";
+import { Toaster as Sonner, toast } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -12,6 +13,7 @@ import SetupPage from "./pages/SetupPage";
 import DashboardPage from "./pages/DashboardPage";
 import QuotationsPage from "./pages/QuotationsPage";
 import CreateQuotationPage from "./pages/CreateQuotationPage";
+import SendEmailPage from "./pages/SendEmailPage";
 import CustomersPage from "./pages/CustomersPage";
 import ItemsPage from "./pages/ItemsPage";
 import TeamPage from "./pages/TeamPage";
@@ -59,6 +61,8 @@ const AppRoutes = () => {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="quotations" element={<QuotationsPage />} />
         <Route path="quotations/new" element={<ProtectedRoute allowedRoles={QUOTATION_CREATE_ALLOWED_ROLES}><CreateQuotationPage /></ProtectedRoute>} />
+        <Route path="quotations/edit/:id" element={<ProtectedRoute allowedRoles={QUOTATION_CREATE_ALLOWED_ROLES}><CreateQuotationPage /></ProtectedRoute>} />
+        <Route path="quotations/send-email/:id" element={<ProtectedRoute allowedRoles={QUOTATION_CREATE_ALLOWED_ROLES}><SendEmailPage /></ProtectedRoute>} />
         <Route path="sales-funnel" element={<SalesFunnelPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="items" element={<ItemsPage />} />
@@ -71,18 +75,45 @@ const AppRoutes = () => {
   );
 };
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+const useGlobalErrorToast = () => {
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      const message = event.error?.message || event.message || "An unexpected error occurred.";
+      toast.error(message);
+    };
+
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const message = reason?.message || String(reason) || "Unhandled promise rejection.";
+      toast.error(message);
+    };
+
+    window.addEventListener("error", handleError);
+    window.addEventListener("unhandledrejection", handleRejection);
+
+    return () => {
+      window.removeEventListener("error", handleError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, []);
+};
+
+const App = () => {
+  useGlobalErrorToast();
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

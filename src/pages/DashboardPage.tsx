@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import StatCard from "../components/StatCard";
 import {
@@ -19,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 const fmtCurrency = (v: number) => `$${(v || 0).toLocaleString()}`;
 
 const DashboardPage = () => {
+  const navigate = useNavigate();
   const { crmUser } = useAuth();
   const [funnels, setFunnels] = useState<SalesFunnel[]>([]);
   const [users, setUsers] = useState<CRMUser[]>([]);
@@ -62,6 +64,7 @@ const DashboardPage = () => {
     try {
       await approveQuotationDoc(notificationId, quotationId);
       toast.success("Quotation approved successfully!");
+      navigate("/sales-funnel");
     } catch (e: any) {
       console.error(e);
       toast.error(e.message || "Failed to approve quotation");

@@ -226,6 +226,26 @@
     backdrop-filter: blur(12px);
   }
 
+  .toaster .toast[data-type="success"] {
+    @apply border-emerald-400 bg-emerald-600 text-white;
+  }
+
+  .toaster .toast[data-type="success"] .toast-body,
+  .toaster .toast[data-type="success"] .toast-title,
+  .toaster .toast[data-type="success"] .toast-description {
+    @apply text-white;
+  }
+
+  .toaster .toast[data-type="error"] {
+    @apply border-red-400 bg-red-600 text-white;
+  }
+
+  .toaster .toast[data-type="error"] .toast-body,
+  .toaster .toast[data-type="error"] .toast-title,
+  .toaster .toast[data-type="error"] .toast-description {
+    @apply text-white;
+  }
+
   .sidebar-link {
     @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out relative overflow-hidden;
   }

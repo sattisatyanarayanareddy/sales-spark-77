@@ -18,7 +18,7 @@ export interface CRMUser {
   disabled?: boolean;
 }
 
-export type QuotationStatus = "Draft" | "Created" | "Approval Pending" | "Sent" | "Won";
+export type QuotationStatus = "Draft" | "Created" | "Ask for Approve" | "Approved" | "Sent Mail";
 
 export interface Customer {
   id: string;
@@ -109,9 +109,9 @@ export interface TeamMember {
 export const STATUS_LABELS: Record<QuotationStatus, string> = {
   Draft: "Draft",
   Created: "Created",
-  "Approval Pending": "Approval Pending",
-  Sent: "Sent",
-  Won: "Won",
+  "Ask for Approve": "Ask for Approve",
+  Approved: "Approved",
+  "Sent Mail": "Sent Mail",
 };
 
 export type SalesFunnelStatus =
@@ -150,8 +150,9 @@ export interface SalesFunnel {
 export const STATUS_COLORS: Record<QuotationStatus, string> = {
   Draft: "bg-gray-500/10 text-gray-500",
   Created: "bg-primary/10 text-primary",
-  "Approval Pending": "bg-amber-500/10 text-amber-500",
-  Sent: "bg-blue-500/10 text-blue-500",
+  "Ask for Approve": "bg-amber-500/10 text-amber-500",
+  Approved: "bg-green-500/10 text-green-500",
+  "Sent Mail": "bg-blue-500/10 text-blue-500",
   Won: "bg-green-500/10 text-green-500",
 };
 

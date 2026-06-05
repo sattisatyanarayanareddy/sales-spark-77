@@ -1,6 +1,3 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
-import path from "path";
 import http from "http";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
@@ -8,16 +5,21 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const buildQuotationPdfBuffer = (quotation: any) => {
-  return new Promise<Buffer>((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
-    const chunks: Buffer[] = [];
+const PORT = Number(process.env.EMAIL_API_PORT || 3000);
 
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+function formatCurrency(value) {
+  return `$${Number(value || 0).toLocaleString()}`;
+}
+
+function buildQuotationPdfBuffer(quotation) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const chunks = [];
+
+    doc.on("data", (chunk) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    const formatCurrency = (value: number) => `$${Number(value || 0).toLocaleString()}`;
     const createdAtValue = quotation.createdAt?.seconds
       ? new Date(quotation.createdAt.seconds * 1000)
       : new Date(quotation.createdAt || Date.now());
@@ -56,7 +58,7 @@ const buildQuotationPdfBuffer = (quotation: any) => {
     doc.text("Value", 460, doc.y, { width: 90, align: "right" });
     doc.moveDown(0.5);
 
-    (quotation.products || []).forEach((product: any) => {
+    (quotation.products || []).forEach((product) => {
       doc.fontSize(10).text(product.name || "-", 40, doc.y);
       doc.text(product.modelNumber || "-", 220, doc.y);
       doc.text(product.partNumber || "-", 330, doc.y);
@@ -76,25 +78,10 @@ const buildQuotationPdfBuffer = (quotation: any) => {
 
     doc.end();
   });
-};
+}
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === "true",
-    requireTLS: process.env.SMTP_REQUIRE_TLS === "true",
-    auth: {
-      user: process.env.SMTP_USERNAME,
-      pass: process.env.SMTP_PASSWORD,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
-
-const parseJsonBody = (req: http.IncomingMessage) =>
-  new Promise<any>((resolve, reject) => {
+function parseJsonRequest(req) {
+  return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
@@ -108,77 +95,76 @@ const parseJsonBody = (req: http.IncomingMessage) =>
     });
     req.on("error", reject);
   });
+}
 
-const handleApiRequest = async (req: http.IncomingMessage, res: http.ServerResponse) => {
-  if (req.method === "POST" && req.url?.split("?")[0] === "/api/send-quotation-email") {
+async function sendEmail(payload) {
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === "true",
+    requireTLS: process.env.SMTP_REQUIRE_TLS === "true",
+    auth: {
+      user: process.env.SMTP_USERNAME,
+      pass: process.env.SMTP_PASSWORD,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  const pdfBuffer = await buildQuotationPdfBuffer(payload.quotation);
+
+  return transporter.sendMail({
+    from: `${process.env.SMTP_FROM_NAME} <${process.env.SMTP_FROM_EMAIL}>`,
+    to: payload.to,
+    cc: payload.cc || undefined,
+    subject: payload.subject,
+    text: payload.body,
+    attachments: [
+      {
+        filename: `${payload.quotation.quotationNumber || "quotation"}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/send-quotation-email") {
     try {
-      const payload = await parseJsonBody(req);
+      const payload = await parseJsonRequest(req);
       if (!payload.quotation || !payload.to || !payload.subject || !payload.body) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ message: "Missing required email payload" }));
         return;
       }
 
-      let pdfBuffer;
-      if (payload.pdfBase64) {
-        pdfBuffer = Buffer.from(payload.pdfBase64, "base64");
-      } else {
-        pdfBuffer = await buildQuotationPdfBuffer(payload.quotation);
-      }
-
-      const transporter = createTransporter();
-
-      await transporter.sendMail({
-        from: `${process.env.SMTP_FROM_NAME} <${process.env.SMTP_FROM_EMAIL}>`,
-        to: payload.to,
-        cc: payload.cc || undefined,
-        subject: payload.subject,
-        text: payload.body,
-        attachments: [
-          {
-            filename: `${payload.quotation?.quotationNumber || "quotation"}.pdf`,
-            content: pdfBuffer,
-            contentType: "application/pdf",
-          },
-        ],
-      });
-
+      await sendEmail(payload);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ message: "Email sent successfully" }));
-    } catch (error: any) {
-      console.error("Vite API error:", error);
+    } catch (error) {
+      console.error("Email API error:", error);
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ message: error?.message || "Failed to send email" }));
     }
-    return true;
+    return;
   }
-  return false;
-};
 
-// https://vitejs.dev/config/
-export default defineConfig(() => ({
-  server: {
-    host: "::",
-    port: 8080,
-    hmr: {
-      overlay: false,
-    },
-  },
-  plugins: [
-    react(),
-    {
-      name: "local-email-api",
-      configureServer(server) {
-        server.middlewares.use(async (req, res, next) => {
-          const handled = await handleApiRequest(req as http.IncomingMessage, res as http.ServerResponse);
-          if (!handled) next();
-        });
-      },
-    },
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-  },
-}));
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ message: "Not found" }));
+});
+
+server.listen(PORT, () => {
+  console.log(`Email API server listening on http://localhost:${PORT}`);
+});

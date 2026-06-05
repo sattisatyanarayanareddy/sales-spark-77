@@ -186,8 +186,8 @@ const ItemsPage = () => {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!crmUser || !formData.name || !formData.value || !formData.saleAccount) {
-      toast.error("Please fill all required fields (Name, Selling Price, Account)");
+    if (!crmUser || !formData.name || !formData.value) {
+      toast.error("Please fill all required fields (Name, Selling Price)");
       return;
     }
 
@@ -219,7 +219,7 @@ const ItemsPage = () => {
           salesDescription: formData.salesDescription,
           modelNumber: formData.modelNumber,
           value: parseFloat(formData.value),
-          saleAccount: formData.saleAccount,
+          saleAccount: formData.saleAccount || "",
           imageFile: formData.imageFile,
           imageUrl: existingImageUrl,
           userEmail: crmUser.email,
@@ -244,7 +244,7 @@ const ItemsPage = () => {
           costPrice: 0, // removed purchase info
           quantity: 0,  // removed quantity
           isSellable: true,
-          saleAccount: formData.saleAccount,
+          saleAccount: formData.saleAccount || "",
           purchaseAccount: formData.saleAccount || "Default Purchase Account", // default same as sales account
           imageFile: formData.imageFile || undefined,
           createdBy: crmUser.id,
@@ -287,11 +287,12 @@ const ItemsPage = () => {
 
   return (
     <div className="page-container space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Items</h1>
-          <p className="text-muted-foreground mt-1">Manage your product catalog</p>
-        </div>
+      <div className="dashboard-hero p-5 md:p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="section-title">Items</h1>
+            <p className="text-sm text-muted-foreground mt-1">Manage your product catalog · {products.filter(p => !p.disabled).length} active</p>
+          </div>
         <Dialog open={open} onOpenChange={(val) => {
           setOpen(val);
           if (!val) {
@@ -302,8 +303,8 @@ const ItemsPage = () => {
           }
         }}>
           <DialogTrigger asChild>
-            <Button className="shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button className="h-9 rounded-xl gap-1.5 btn-gradient text-sm">
+              <Plus className="w-3.5 h-3.5" />
               Add Item
             </Button>
           </DialogTrigger>
@@ -566,7 +567,7 @@ const ItemsPage = () => {
                       <h3 className="text-sm font-bold text-foreground">Sales Information</h3>
                       <span className="text-[10px] bg-green-500/10 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                       <div className="space-y-1">
                         <Label htmlFor="value" className="text-xs font-semibold">Selling Price *</Label>
                         <Input
@@ -577,16 +578,6 @@ const ItemsPage = () => {
                           value={formData.value}
                           onChange={(e) => setFormData({ ...formData, value: e.target.value })}
                           placeholder="0.00"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="saleAccount" className="text-xs font-semibold">Account *</Label>
-                        <Input
-                          id="saleAccount"
-                          required
-                          value={formData.saleAccount}
-                          onChange={(e) => setFormData({ ...formData, saleAccount: e.target.value })}
-                          placeholder="e.g., Sales Account"
                         />
                       </div>
                     </div>
@@ -639,6 +630,7 @@ const ItemsPage = () => {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="dashboard-panel">

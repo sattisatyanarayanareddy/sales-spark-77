@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { toast } from "@/components/ui/sonner";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -51,8 +52,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userData = await fetchUserDoc(user.uid);
           console.log("✅ Firestore user data:", userData);
           setCrmUser(userData);
-        } catch (e) {
+        } catch (e: any) {
           console.error("❌ Error fetching user doc:", e);
+          toast.error(e?.message || "Failed to load your profile. Please refresh and try again.");
           setCrmUser(null);
         }
       } else {
