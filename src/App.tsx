@@ -20,6 +20,7 @@ import TeamPage from "./pages/TeamPage";
 import SalesFunnelPage from "./pages/SalesFunnelPage";
 import SalesPersonProfilePage from "./pages/SalesPersonProfilePage";
 import ProfileSetupPage from "./pages/ProfileSetupPage";
+import CalendarPage from "./pages/CalendarPage";
 import NotFound from "./pages/NotFound";
 import { QUOTATION_CREATE_ALLOWED_ROLES, TEAM_ALLOWED_ROLES } from "./lib/access-control";
 
@@ -64,6 +65,7 @@ const AppRoutes = () => {
         <Route path="quotations/edit/:id" element={<ProtectedRoute allowedRoles={QUOTATION_CREATE_ALLOWED_ROLES}><CreateQuotationPage /></ProtectedRoute>} />
         <Route path="quotations/send-email/:id" element={<ProtectedRoute allowedRoles={QUOTATION_CREATE_ALLOWED_ROLES}><SendEmailPage /></ProtectedRoute>} />
         <Route path="sales-funnel" element={<SalesFunnelPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="items" element={<ItemsPage />} />
         <Route path="team" element={<ProtectedRoute allowedRoles={TEAM_ALLOWED_ROLES}><TeamPage /></ProtectedRoute>} />

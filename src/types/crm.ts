@@ -133,6 +133,7 @@ export interface SalesFunnel {
   followUpDate: string | null;
   closingMonth: string | null;
   closingYear: string | null;
+  closingDate: string | null;
   wonMonth?: string | null;
   remarks?: string;
   status: SalesFunnelStatus;
@@ -147,7 +148,7 @@ export interface SalesFunnel {
   disabled?: boolean;
 }
 
-export const STATUS_COLORS: Record<QuotationStatus, string> = {
+export const STATUS_COLORS: Record<QuotationStatus | "Won", string> = {
   Draft: "bg-gray-500/10 text-gray-500",
   Created: "bg-primary/10 text-primary",
   "Ask for Approve": "bg-amber-500/10 text-amber-500",

@@ -49,9 +49,6 @@ const CreateQuotationPage: React.FC = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedProducts, setSelectedProducts] = useState<Array<{product: Product, quantity: number}>>([]);
   const [open, setOpen] = useState(false);
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  // Use string state for in-flight quantity editing to allow clearing the field
-  const [selectedProductQuantities, setSelectedProductQuantities] = useState<Record<string, string>>({});
   const [subject, setSubject] = useState("");
 
   useEffect(() => {
@@ -106,12 +103,6 @@ const CreateQuotationPage: React.FC = () => {
             quantity: product.quantity || 1,
           }));
           setSelectedProducts(loadedProducts);
-          setSelectedProductQuantities(
-            loadedProducts.reduce((acc, item) => {
-              acc[item.product.id] = String(item.quantity);
-              return acc;
-            }, {} as Record<string, string>)
-          );
           setTableQuantityStrings(
             loadedProducts.reduce((acc, item) => {
               acc[item.product.id] = String(item.quantity);
@@ -136,57 +127,23 @@ const CreateQuotationPage: React.FC = () => {
     setSelectedCustomer(customer || null);
   };
 
-  const handleToggleProduct = (productId: string) => {
-    setSelectedProductIds(prev => {
-      const isSelected = prev.includes(productId);
-      if (isSelected) {
-        // Remove from selection and clear quantity
-        const newIds = prev.filter(id => id !== productId);
-        setSelectedProductQuantities(prevQuantities => {
-          const newQuantities = { ...prevQuantities };
-          delete newQuantities[productId];
-          return newQuantities;
-        });
-        return newIds;
+  const handleSelectProductDirectly = (product: Product) => {
+    setSelectedProducts((prev) => {
+      const existingIdx = prev.findIndex((item) => item.product.id === product.id);
+      if (existingIdx > -1) {
+        const updated = [...prev];
+        const newQty = updated[existingIdx].quantity + 1;
+        updated[existingIdx] = { ...updated[existingIdx], quantity: newQty };
+        setTableQuantityStrings((prevStrings) => ({ ...prevStrings, [product.id]: String(newQty) }));
+        toast.success(`Incremented quantity of ${product.name} to ${newQty}`);
+        return updated;
       } else {
-        // Add to selection with default quantity of 1
-        setSelectedProductQuantities(prevQuantities => ({
-          ...prevQuantities,
-          [productId]: "1"
-        }));
-        return [...prev, productId];
+        setTableQuantityStrings((prevStrings) => ({ ...prevStrings, [product.id]: "1" }));
+        toast.success(`Added ${product.name} to quotation`);
+        return [...prev, { product, quantity: 1 }];
       }
     });
-  };
-
-  const handleUpdateSelectedQuantity = (productId: string, rawValue: string) => {
-    // Allow free-form typing — store raw string, parse on blur/submit
-    setSelectedProductQuantities((prev) => ({ ...prev, [productId]: rawValue }));
-  };
-
-  const handleSelectedQuantityBlur = (productId: string) => {
-    // On blur, clamp to minimum 1
-    setSelectedProductQuantities((prev) => {
-      const num = parseInt(prev[productId] || "1", 10);
-      return { ...prev, [productId]: isNaN(num) || num < 1 ? "1" : String(num) };
-    });
-  };
-
-  const handleAddSelectedProducts = () => {
-    const newProducts = availableProducts
-      .filter((product) => selectedProductIds.includes(product.id))
-      .filter((product) => !selectedProducts.find((p) => p.product.id === product.id))
-      .map((product) => {
-        const qty = parseInt(selectedProductQuantities[product.id] || "1", 10);
-        return { product, quantity: isNaN(qty) || qty < 1 ? 1 : qty };
-      });
-
-    if (newProducts.length > 0) {
-      setSelectedProducts([...selectedProducts, ...newProducts]);
-      setSelectedProductIds([]);
-      setSelectedProductQuantities({});
-      setOpen(false);
-    }
+    setOpen(false);
   };
 
   const handleRemoveProduct = (index: number, productId: string) => {
@@ -297,6 +254,10 @@ const CreateQuotationPage: React.FC = () => {
                 poValue: originalQuotation.poValue || 0,
                 deliveryStatus: originalQuotation.deliveryStatus || "Pending",
                 invoiceValue: originalQuotation.invoiceValue || 0,
+                pendingPayment: originalQuotation.pendingPayment ?? 0,
+                paymentStatus: originalQuotation.paymentStatus ?? "Pending",
+                closingMonth: null,
+                closingYear: null,
                 salesPersonId: originalQuotation.salesPersonId,
               });
             }
@@ -322,6 +283,8 @@ const CreateQuotationPage: React.FC = () => {
           poNumber: "",
           poValue: 0,
           invoiceValue: 0,
+          pendingPayment: totalValue,
+          paymentStatus: "Pending",
           followUpDate: null,
           followUpNotes: "",
           deliveryStatus: "Pending",
@@ -348,7 +311,7 @@ const CreateQuotationPage: React.FC = () => {
   }
 
   return (
-    <div className="page-container max-w-2xl">
+    <div className="page-container max-w-4xl">
       <h2 className="section-title mb-6">{isEditMode ? "Edit Quotation" : "Create New Quotation"}</h2>
 
       {!crmUser.signature && (
@@ -375,8 +338,8 @@ const CreateQuotationPage: React.FC = () => {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Customer Selection */}
-        <Card className="p-6">
-          <h3 className="font-display font-semibold mb-4">Select Customer</h3>
+        <Card className="p-6 shadow-sm border border-border/80">
+          <h3 className="font-display font-semibold mb-4 text-lg">Select Customer</h3>
           <div className="space-y-2">
             <Label>Customer *</Label>
             <Select value={selectedCustomer?.id ?? ""} onValueChange={handleSelectCustomer}>
@@ -394,23 +357,23 @@ const CreateQuotationPage: React.FC = () => {
           </div>
 
           {selectedCustomer && (
-            <div className="mt-4 p-4 bg-accent/40 rounded-lg space-y-2">
+            <div className="mt-4 p-4 bg-muted/40 rounded-xl space-y-2 border border-border/60">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Name</p>
-                  <p className="font-medium">{selectedCustomer.name}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Name</p>
+                  <p className="font-medium text-sm mt-0.5">{selectedCustomer.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Company</p>
-                  <p className="font-medium">{selectedCustomer.companyName}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Company</p>
+                  <p className="font-medium text-sm mt-0.5">{selectedCustomer.companyName}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-medium text-blue-600">{selectedCustomer.email}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Email</p>
+                  <p className="font-medium text-sm text-primary mt-0.5">{selectedCustomer.email}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Phone</p>
-                  <p className="font-medium">{selectedCustomer.phone || "—"}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Phone</p>
+                  <p className="font-medium text-sm mt-0.5">{selectedCustomer.phone || "—"}</p>
                 </div>
               </div>
             </div>
@@ -418,7 +381,7 @@ const CreateQuotationPage: React.FC = () => {
         </Card>
 
         {/* Subject */}
-        <Card className="p-6">
+        <Card className="p-6 shadow-sm border border-border/80">
           <div className="space-y-2">
             <Label>Subject *</Label>
             <Input
@@ -448,10 +411,10 @@ const CreateQuotationPage: React.FC = () => {
         </Card>
 
         {/* Product Selection */}
-        <Card className="p-6">
-          <h3 className="font-display font-semibold mb-4">Add Items</h3>
+        <Card className="p-6 shadow-sm border border-border/80">
+          <h3 className="font-display font-semibold mb-4 text-lg">Add Items</h3>
           
-          <div className="space-y-2 mb-4">
+          <div className="space-y-2 mb-6">
             <Label>Select Items *</Label>
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
@@ -459,15 +422,13 @@ const CreateQuotationPage: React.FC = () => {
                   variant="outline"
                   role="combobox"
                   aria-expanded={open}
-                  className="w-full justify-between"
+                  className="w-full justify-between rounded-xl h-10 border border-input shadow-none hover:bg-accent/40"
                 >
-                  {selectedProductIds.length === 0
-                    ? "Select items to add..."
-                    : `${selectedProductIds.length} item${selectedProductIds.length > 1 ? 's' : ''} selected`}
+                  <span className="text-muted-foreground font-normal">Select items to add...</span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-full p-0">
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
                 <Command>
                   <CommandInput placeholder="Search items..." />
                   <CommandList>
@@ -476,15 +437,14 @@ const CreateQuotationPage: React.FC = () => {
                       {availableProducts.map((product) => (
                         <CommandItem
                           key={product.id}
-                          onSelect={() => handleToggleProduct(product.id)}
+                          onSelect={() => handleSelectProductDirectly(product)}
+                          className="flex justify-between items-center py-2 px-3 hover:bg-accent cursor-pointer"
                         >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              selectedProductIds.includes(product.id) ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          {product.name} - ${product.value.toLocaleString()}
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-foreground text-sm">{product.name}</span>
+                            <span className="text-xs text-muted-foreground mt-0.5">Model: {product.modelNumber || "—"}</span>
+                          </div>
+                          <span className="font-bold text-sm text-green-600">${product.value.toLocaleString()}</span>
                         </CommandItem>
                       ))}
                     </CommandGroup>
@@ -494,171 +454,78 @@ const CreateQuotationPage: React.FC = () => {
             </Popover>
           </div>
 
-          {/* Selected Items Preview */}
-          {selectedProductIds.length > 0 && (
-            <div className="space-y-3">
-              <Label className="text-base font-medium">Selected Items (Ready to Add)</Label>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {selectedProductIds.map((productId) => {
-                  const product = availableProducts.find(p => p.id === productId);
-                  return product ? (
-                    <Card key={productId} className="relative overflow-hidden border-2 border-primary/20">
-                      <div className="absolute top-2 right-2 z-10">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleToggleProduct(productId)}
-                          className="h-6 w-6 p-0"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <div className="p-4">
-                        <div className="flex gap-3">
-                          {product.imageUrl && (
-                            <div className="flex-shrink-0">
-                              <img
-                                src={product.imageUrl}
-                                alt={product.name}
-                                className="w-16 h-16 object-cover rounded-lg border"
-                              />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-sm truncate">{product.name}</h4>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Model: {product.modelNumber}
-                            </p>
-                            {product.partNumber && (
-                              <p className="text-xs text-muted-foreground">
-                                Part: {product.partNumber}
-                              </p>
-                            )}
-                            {product.description && (
-                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                {product.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="mt-3 flex items-center justify-between">
-                          <div className="text-lg font-bold text-primary">
-                            ${product.value.toLocaleString()}
-                          </div>
-                          {product.quantity && (
-                            <div className="text-xs text-muted-foreground">
-                              Stock: {product.quantity}
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-3 flex items-center gap-2">
-                          <Label className="text-xs font-medium">Qty:</Label>
-                          <div className="flex items-center gap-1">
+          {/* Selected Products List */}
+          {selectedProducts.length > 0 ? (
+            <div className="space-y-5">
+              <div className="overflow-x-auto rounded-xl border border-border/70">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/80 bg-muted/30">
+                      <th className="text-left py-3 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Item</th>
+                      <th className="text-left py-3 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Model</th>
+                      <th className="text-center py-3 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-36">Qty</th>
+                      <th className="text-right py-3 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Unit Price</th>
+                      <th className="text-right py-3 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Total</th>
+                      <th className="text-center py-3 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-16">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedProducts.map((item, idx) => (
+                      <tr key={idx} className="border-b border-border/40 hover:bg-accent/20 transition-colors">
+                        <td className="py-3 px-3 font-medium">{item.product.name}</td>
+                        <td className="py-3 px-3 text-muted-foreground font-medium">{item.product.modelNumber || "—"}</td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5 mx-auto">
                             <Button
                               variant="outline"
                               size="sm"
                               type="button"
                               onClick={() => {
-                                const cur = parseInt(selectedProductQuantities[productId] || "1", 10);
-                                handleUpdateSelectedQuantity(productId, String(Math.max(1, cur - 1)));
+                                const cur = item.quantity;
+                                if (cur > 1) {
+                                  handleUpdateQuantity(idx, String(cur - 1));
+                                  setTableQuantityStrings((prev) => ({ ...prev, [item.product.id]: String(cur - 1) }));
+                                }
                               }}
-                              disabled={parseInt(selectedProductQuantities[productId] || "1", 10) <= 1}
-                              className="h-7 w-7 p-0"
+                              disabled={item.quantity <= 1}
+                              className="h-7 w-7 p-0 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors border-border/80"
                             >
                               -
                             </Button>
                             <Input
                               type="text"
                               inputMode="numeric"
-                              value={selectedProductQuantities[productId] ?? "1"}
-                              onChange={(e) => handleUpdateSelectedQuantity(productId, e.target.value.replace(/[^0-9]/g, ""))}
-                              onBlur={() => handleSelectedQuantityBlur(productId)}
-                              className="w-16 h-7 text-center text-sm"
+                              value={tableQuantityStrings[item.product.id] ?? String(item.quantity)}
+                              onChange={(e) => handleTableQuantityChange(item.product.id, e.target.value.replace(/[^0-9]/g, ""))}
+                              onBlur={() => handleTableQuantityBlur(idx, item.product.id)}
+                              className="w-12 h-7 text-center p-0 text-xs font-semibold focus:outline-none focus:border-primary/80 focus:ring-4 focus:ring-primary/10 rounded-lg border-border"
                             />
                             <Button
                               variant="outline"
                               size="sm"
                               type="button"
                               onClick={() => {
-                                const cur = parseInt(selectedProductQuantities[productId] || "1", 10);
-                                handleUpdateSelectedQuantity(productId, String(cur + 1));
+                                const cur = item.quantity;
+                                handleUpdateQuantity(idx, String(cur + 1));
+                                setTableQuantityStrings((prev) => ({ ...prev, [item.product.id]: String(cur + 1) }));
                               }}
-                              disabled={!!(product.quantity && parseInt(selectedProductQuantities[productId] || "1", 10) >= product.quantity)}
-                              className="h-7 w-7 p-0"
+                              className="h-7 w-7 p-0 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors border-border/80"
                             >
                               +
                             </Button>
                           </div>
-                        </div>
-                        <div className="mt-2 text-sm font-medium text-primary">
-                          Total: ${(product.value * (parseInt(selectedProductQuantities[productId] || "1", 10) || 1)).toLocaleString()}
-                        </div>
-                      </div>
-                    </Card>
-                  ) : null;
-                })}
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t">
-                <div className="text-sm text-muted-foreground">
-                  {selectedProductIds.length} item{selectedProductIds.length > 1 ? 's' : ''} selected •
-                  Total: ${selectedProductIds.reduce((total, productId) => {
-                    const product = availableProducts.find(p => p.id === productId);
-                    const quantity = parseInt(selectedProductQuantities[productId] || "1", 10) || 1;
-                    return total + (product ? product.value * quantity : 0);
-                  }, 0).toLocaleString()}
-                </div>
-                <Button
-                  onClick={handleAddSelectedProducts}
-                  size="sm"
-                  className="px-6"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add to Quotation
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Selected Products List */}
-          {selectedProducts.length > 0 ? (
-            <div className="space-y-3">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-2 px-2 font-medium">Item</th>
-                      <th className="text-left py-2 px-2 font-medium">Model</th>
-                      <th className="text-center py-2 px-2 font-medium">Qty</th>
-                      <th className="text-right py-2 px-2 font-medium">Unit Price</th>
-                      <th className="text-right py-2 px-2 font-medium">Total</th>
-                      <th className="text-center py-2 px-2 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedProducts.map((item, idx) => (
-                      <tr key={idx} className="border-b border-border/40 hover:bg-accent/20">
-                        <td className="py-2 px-2">{item.product.name}</td>
-                        <td className="py-2 px-2 text-muted-foreground">{item.product.modelNumber || "—"}</td>
-                        <td className="py-2 px-2 text-center">
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={tableQuantityStrings[item.product.id] ?? String(item.quantity)}
-                            onChange={(e) => handleTableQuantityChange(item.product.id, e.target.value.replace(/[^0-9]/g, ""))}
-                            onBlur={() => handleTableQuantityBlur(idx, item.product.id)}
-                            className="w-16 h-8 text-center"
-                          />
                         </td>
-                        <td className="py-2 px-2 text-right">${item.product.value.toLocaleString()}</td>
-                        <td className="py-2 px-2 text-right font-medium">${(item.product.value * item.quantity).toLocaleString()}</td>
-                        <td className="py-2 px-2 text-center">
+                        <td className="py-3 px-3 text-right text-muted-foreground font-semibold">${item.product.value.toLocaleString()}</td>
+                        <td className="py-3 px-3 text-right font-bold text-foreground">${(item.product.value * item.quantity).toLocaleString()}</td>
+                        <td className="py-3 px-3 text-center">
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemoveProduct(idx, item.product.id)}
+                            className="h-8 w-8 p-0 rounded-lg hover:bg-destructive/10 text-destructive hover:text-destructive transition-colors"
                           >
-                            <Trash2 className="w-4 h-4 text-destructive" />
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </td>
                       </tr>
@@ -666,12 +533,16 @@ const CreateQuotationPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              <div className="pt-2 text-right border-t border-border">
-                <p className="text-lg font-semibold">Total Value: ${totalValue.toLocaleString()}</p>
+              <div className="pt-3 text-right flex items-center justify-between px-2">
+                <span className="text-sm font-semibold text-muted-foreground">{selectedProducts.length} unique item{selectedProducts.length > 1 ? 's' : ''} added</span>
+                <p className="text-xl font-extrabold bg-gradient-to-r from-foreground to-foreground/85 bg-clip-text text-transparent">Total Value: ${totalValue.toLocaleString()}</p>
               </div>
             </div>
           ) : (
-            <p className="text-center text-muted-foreground py-4">No items selected yet</p>
+            <div className="text-center py-10 rounded-xl border border-dashed border-border/80 bg-muted/10">
+              <p className="text-sm text-muted-foreground font-medium">No items selected yet</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Use the search box above to add items directly</p>
+            </div>
           )}
         </Card>
 

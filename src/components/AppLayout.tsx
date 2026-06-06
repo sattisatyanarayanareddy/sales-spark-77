@@ -12,6 +12,7 @@ import {
   TrendingUp,
   UserCircle,
   FileText,
+  Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,10 +28,10 @@ const roleLabel = {
 };
 
 const roleBadgeClass = {
-  administrator: "bg-purple-100 text-purple-700 border-purple-200",
-  general_manager: "bg-success/10 text-success border-success/20",
-  sub_manager: "bg-info/10 text-info border-info/20",
-  sales: "bg-warning/10 text-warning border-warning/20",
+  administrator: "bg-violet-500/10 text-violet-600 border-violet-500/25 dark:text-violet-400 dark:border-violet-500/30",
+  general_manager: "bg-emerald-500/10 text-emerald-600 border-emerald-500/25 dark:text-emerald-400 dark:border-emerald-500/30",
+  sub_manager: "bg-indigo-500/10 text-indigo-600 border-indigo-500/25 dark:text-indigo-400 dark:border-indigo-500/30",
+  sales: "bg-amber-500/10 text-amber-600 border-amber-500/25 dark:text-amber-400 dark:border-amber-500/30",
 };
 
 const AppLayout: React.FC = () => {
@@ -47,11 +48,13 @@ const AppLayout: React.FC = () => {
     ? [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { to: "/team", icon: Users, label: "Users" },
+        { to: "/calendar", icon: Calendar, label: "Calendar" },
       ]
     : crmUser.role === "general_manager"
     ? [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { to: "/team", icon: Users, label: "Team" },
+        { to: "/calendar", icon: Calendar, label: "Calendar" },
       ]
     : [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -59,6 +62,7 @@ const AppLayout: React.FC = () => {
         { to: "/items", icon: BarChart3, label: "Items" },
         { to: "/quotations", icon: FileText, label: "Quotations" },
         { to: "/sales-funnel", icon: TrendingUp, label: "Sales Funnel" },
+        { to: "/calendar", icon: Calendar, label: "Calendar" },
         ...(isManager ? [{ to: "/team", icon: Users, label: "Team" }] : []),
       ];
 

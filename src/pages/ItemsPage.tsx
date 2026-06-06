@@ -324,7 +324,7 @@ const ItemsPage = () => {
                     id="type"
                     value={formData.type}
                     disabled={!!selectedProduct}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-70 dark:bg-card"
+                    className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-primary/85 focus:ring-4 focus:ring-primary/10 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
                     onChange={(e) => setFormData({ ...formData, type: e.target.value as "Goods" | "Service" })}
                   >
                     <option value="Goods">Goods</option>
@@ -392,12 +392,9 @@ const ItemsPage = () => {
                     required
                     value={formData.name}
                     onChange={(e) => handleNameChange(e.target.value)}
-                    placeholder="Enter or search item name..."
+                    placeholder="Enter item Name..."
                     className="pr-10 focus-visible:ring-1"
                   />
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-muted-foreground">
-                    <Search className="w-4 h-4" />
-                  </div>
                 </div>
 
                 {/* Suggestions List */}
@@ -646,33 +643,33 @@ const ItemsPage = () => {
               return (
                 <div
                   key={idx}
-                  className={`border border-border/80 rounded-xl p-3 hover:bg-card hover:shadow-md transition-all duration-300 bg-card/65 flex flex-col justify-between group ${isProductDisabled ? "opacity-60 bg-muted/10" : ""}`}
+                  className={`border border-border/70 rounded-2xl p-5 hover:bg-card hover:shadow-[0_20px_40px_-15px_rgba(99,102,241,0.06)] hover:-translate-y-1 hover:border-primary/45 transition-all duration-300 bg-card/80 backdrop-blur-md flex flex-col justify-between group ${isProductDisabled ? "opacity-60 bg-muted/10" : ""}`}
                 >
                   <div>
                     {product.imageUrl ? (
-                      <div className="w-full h-44 rounded-lg overflow-hidden mb-4 border border-border bg-muted/40 relative">
+                      <div className="w-full h-44 rounded-xl overflow-hidden mb-4 border border-border/50 bg-muted/30 relative">
                         <img
                           src={product.imageUrl}
                           alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         />
                         {isProductDisabled && (
                           <div className="absolute top-2 left-2 z-10">
-                            <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 font-semibold text-[10px]">
+                            <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 font-semibold text-[10px] rounded-lg">
                               Disabled
                             </Badge>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="w-full h-44 rounded-lg mb-4 border border-dashed border-border bg-gradient-to-br from-primary/5 to-secondary/30 flex flex-col items-center justify-center text-muted-foreground gap-2 relative">
-                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+                      <div className="w-full h-44 rounded-xl mb-4 border border-dashed border-border/80 bg-gradient-to-br from-primary/5 via-primary/0 to-accent/5 flex flex-col items-center justify-center text-muted-foreground gap-2 relative">
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold text-lg shadow-sm border border-primary/10">
                           {product.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-xs font-medium text-muted-foreground/70">No image provided</span>
+                        <span className="text-xs font-semibold text-muted-foreground/70">No image provided</span>
                         {isProductDisabled && (
                           <div className="absolute top-2 left-2 z-10">
-                            <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 font-semibold text-[10px]">
+                            <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 font-semibold text-[10px] rounded-lg">
                               Disabled
                             </Badge>
                           </div>
@@ -681,10 +678,10 @@ const ItemsPage = () => {
                     )}
 
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <h3 className="font-semibold text-lg leading-snug text-foreground group-hover:text-primary transition-colors">
+                      <h3 className="font-bold text-lg leading-snug text-foreground group-hover:text-primary transition-colors">
                         {product.name}
                       </h3>
-                      <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 mt-0.5">
+                      <span className="text-[10px] bg-primary/10 text-primary px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 mt-0.5">
                         {product.type}
                       </span>
                     </div>
@@ -697,16 +694,16 @@ const ItemsPage = () => {
 
                     <div className="space-y-2 mb-4 pt-3 border-t border-border/50 text-xs">
                       <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">SKU:</span>
-                        <span className="font-semibold font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded text-foreground">{product.sku}</span>
+                        <span className="text-muted-foreground font-medium">SKU:</span>
+                        <span className="font-semibold font-mono text-[10px] bg-muted px-2 py-0.5 rounded-lg border border-border/40 text-foreground">{product.sku}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Unit:</span>
+                        <span className="text-muted-foreground font-medium">Unit:</span>
                         <span className="font-medium text-foreground">{product.unit}</span>
                       </div>
                       {product.modelNumber && (
                         <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Model:</span>
+                          <span className="text-muted-foreground font-medium">Model:</span>
                           <span className="font-medium text-foreground">{product.modelNumber}</span>
                         </div>
                       )}
@@ -715,8 +712,8 @@ const ItemsPage = () => {
 
                   <div className="border-t border-border/50 pt-4 mt-2 flex items-center justify-between gap-4">
                     <div className="flex flex-col">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Selling Price</span>
-                      <span className="font-extrabold text-lg text-green-600">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Selling Price</span>
+                      <span className="font-extrabold text-xl text-emerald-600">
                         ${Number(product.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>

@@ -179,6 +179,10 @@ const QuotationsPage: React.FC = () => {
               poValue: editQuotation.poValue || 0,
               deliveryStatus: editQuotation.deliveryStatus || "Pending",
               invoiceValue: editQuotation.invoiceValue || 0,
+              pendingPayment: editQuotation.pendingPayment ?? 0,
+              paymentStatus: editQuotation.paymentStatus ?? "Pending",
+              closingMonth: null,
+              closingYear: null,
               salesPersonId: editQuotation.salesPersonId,
             });
           }

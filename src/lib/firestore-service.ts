@@ -30,15 +30,42 @@ const toDate = (val: any): string => {
 function mapOldStageToStatus(oldStage: string): QuotationStatus {
   const stageMap: Record<string, QuotationStatus> = {
     quotation_created: "Created",
-    follow_up: "Sent",
-    po_received: "Sent",
-    invoice_sent: "Sent",
-    partial_payment: "Sent",
-    payment_received: "Sent",
-    closed_won: "Won",
-    closed_lost: "Sent",
+    follow_up: "Sent Mail",
+    po_received: "Sent Mail",
+    invoice_sent: "Sent Mail",
+    partial_payment: "Sent Mail",
+    payment_received: "Sent Mail",
+    closed_won: "Sent Mail",
+    closed_lost: "Sent Mail",
   };
   return stageMap[oldStage] || "Draft";
+}
+
+const monthNameMap: Record<string, string> = {
+  January: "01", February: "02", March: "03", April: "04", May: "05", June: "06",
+  July: "07", August: "08", September: "09", October: "10", November: "11", December: "12"
+};
+
+const getFallbackClosingDate = (month: string | null, year: string | null): string | null => {
+  if (!month || !year) return null;
+  const mm = monthNameMap[month] || "01";
+  const yy = /^\d{4}$/.test(year) ? year : "2026";
+  return `${yy}-${mm}-01`;
+};
+
+const MONTHS_LIST = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+export function getMonthYearFromDate(dateStr: string | null): { month: string | null; year: string | null } {
+  if (!dateStr) return { month: null, year: null };
+  const parts = dateStr.split("-");
+  if (parts.length < 2) return { month: null, year: null };
+  const year = parts[0];
+  const monthIdx = parseInt(parts[1], 10) - 1;
+  const month = MONTHS_LIST[monthIdx] || null;
+  return { month, year };
 }
 
 const mapSalesFunnel = (id: string, data: any): SalesFunnel => ({
@@ -51,6 +78,7 @@ const mapSalesFunnel = (id: string, data: any): SalesFunnel => ({
   followUpDate: data.followUpDate || null,
   closingMonth: data.closingMonth || null,
   closingYear: data.closingYear || null,
+  closingDate: data.closingDate || getFallbackClosingDate(data.closingMonth, data.closingYear),
   wonMonth: data.wonMonth || null,
   remarks: data.remarks || "",
   status: data.status || "Hot",
@@ -100,6 +128,8 @@ export function normalizeSalesFunnelPayload(
   const allowedStatuses = ["Hot", "Warm", "Cold", "Closed", "Cancelled", "Lost", "Won"] as const;
   const allowedPaymentStatuses = ["Pending", "Partial", "Completed"] as const;
 
+  const derived = getMonthYearFromDate(data.closingDate);
+
   return {
     ...data,
     quotationValue: toNonNegativeNumber(data.quotationValue, "Quotation value"),
@@ -117,8 +147,9 @@ export function normalizeSalesFunnelPayload(
       ? data.status
       : "Cold",
     followUpDate: data.followUpDate ?? null,
-    closingMonth: data.closingMonth ?? null,
-    closingYear: data.closingYear ?? null,
+    closingMonth: data.closingDate ? derived.month : (data.closingMonth ?? null),
+    closingYear: data.closingDate ? derived.year : (data.closingYear ?? null),
+    closingDate: data.closingDate ?? null,
     wonMonth: data.wonMonth ?? null,
   };
 }
@@ -140,6 +171,8 @@ const mapQuotation = (id: string, data: any): Quotation => ({
   poNumber: data.poNumber || "",
   poValue: data.poValue || 0,
   invoiceValue: data.invoiceValue || 0,
+  pendingPayment: data.pendingPayment ?? (data.totalValue || 0),
+  paymentStatus: data.paymentStatus || "Pending",
   followUpDate: data.followUpDate || null,
   followUpNotes: data.followUpNotes || "",
   deliveryStatus: data.deliveryStatus || "Pending",
@@ -1178,6 +1211,11 @@ export async function approveQuotationDoc(notificationId: string, quotationId: s
       poValue: quotation.poValue || 0,
       deliveryStatus: quotation.deliveryStatus || "Pending",
       invoiceValue: quotation.invoiceValue || 0,
+      pendingPayment: quotation.pendingPayment ?? 0,
+      paymentStatus: quotation.paymentStatus ?? "Pending",
+      closingMonth: null,
+      closingYear: null,
+      closingDate: null,
       salesPersonId: quotation.salesPersonId,
     });
   }

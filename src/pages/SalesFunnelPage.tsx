@@ -117,19 +117,14 @@ const SalesFunnelPage: React.FC = () => {
     }
 
       if (requiresClosingFields) {
-      if (!editFunnel.closingMonth || !editFunnel.closingYear) {
-        setValidationError("Closing Month and Closing Year are required for Cold, Warm, Hot or Won deals");
-        return;
-      }
-
-      if (!/^\d{4}$/.test(editFunnel.closingYear)) {
-        setValidationError("Closing Year must be a valid 4-digit year");
+      if (!editFunnel.closingDate) {
+        setValidationError("Closing Date is required for Cold, Warm, Hot or Won deals");
         return;
       }
     }
 
     setValidationError("");
-  }, [poValueStr, invoiceValueStr, completedPaymentStr, paymentStatus, editFunnel?.status, editFunnel?.deliveryStatus, editFunnel?.followUpDate, editFunnel?.closingMonth, editFunnel?.closingYear, editFunnel?.quotationValue, editFunnel?.remarks]);
+  }, [poValueStr, invoiceValueStr, completedPaymentStr, paymentStatus, editFunnel?.status, editFunnel?.deliveryStatus, editFunnel?.followUpDate, editFunnel?.closingDate, editFunnel?.quotationValue, editFunnel?.remarks]);
 
   useEffect(() => {
     if (!crmUser) return;
@@ -228,13 +223,8 @@ const SalesFunnelPage: React.FC = () => {
     }
 
     if (requiresClosingFields) {
-      if (!editFunnel.closingMonth || !editFunnel.closingYear) {
-        setValidationError("Closing Month and Closing Year are required for Cold, Warm, Hot or Won deals");
-        return;
-      }
-
-      if (!/^\d{4}$/.test(editFunnel.closingYear)) {
-        setValidationError("Closing Year must be a valid 4-digit year");
+      if (!editFunnel.closingDate) {
+        setValidationError("Closing Date is required for Cold, Warm, Hot or Won deals");
         return;
       }
     }
@@ -286,9 +276,8 @@ const SalesFunnelPage: React.FC = () => {
             : Math.max(0, parsedInv - parsedCompletedPayment),
         paymentStatus,
         followUpDate: requiresFollowUpDate ? editFunnel.followUpDate : null,
-          closingMonth: requiresClosingFields ? editFunnel.closingMonth : null,
-          closingYear: requiresClosingFields ? editFunnel.closingYear : null,
-          wonMonth: editFunnel.wonMonth ?? null,
+        closingDate: requiresClosingFields ? editFunnel.closingDate : null,
+        wonMonth: editFunnel.wonMonth ?? null,
         remarks: editFunnel.remarks ?? "",
       });
       toast.success("Sales funnel updated successfully!");
@@ -358,26 +347,26 @@ const SalesFunnelPage: React.FC = () => {
       </div>
 
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="stat-card p-0 overflow-x-auto">
-        <div className="min-w-[1350px]">
-          <Table className="min-w-[1350px]">
+        <div className="min-w-[1900px]">
+          <Table className="min-w-[1900px]">
             <TableHeader>
               <TableRow>
-                <TableHead>Sent Date</TableHead>
-                <TableHead>Quotation No.</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Customer</TableHead>
-                {showSalespersonCol && <TableHead>Salesperson</TableHead>}
-                <TableHead className="text-right">Quotation Value</TableHead>
-                <TableHead>Follow-Up Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Closing Month/Year</TableHead>
-                <TableHead>Won Month</TableHead>
-                <TableHead className="text-right">PO Value</TableHead>
-                <TableHead>Delivery Status</TableHead>
-                <TableHead className="text-right">Invoice Value</TableHead>
-                <TableHead className="text-right">Payment</TableHead>
-                <TableHead>Remarks</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="whitespace-nowrap">Sent Date</TableHead>
+                <TableHead className="whitespace-nowrap">Quotation No.</TableHead>
+                <TableHead className="whitespace-nowrap">Company</TableHead>
+                <TableHead className="whitespace-nowrap">Customer</TableHead>
+                {showSalespersonCol && <TableHead className="whitespace-nowrap">Salesperson</TableHead>}
+                <TableHead className="text-right whitespace-nowrap">Quotation Value</TableHead>
+                <TableHead className="whitespace-nowrap">Follow-Up Date</TableHead>
+                <TableHead className="text-center whitespace-nowrap">Status</TableHead>
+                <TableHead className="whitespace-nowrap">Closing Date</TableHead>
+                <TableHead className="whitespace-nowrap">Won Month</TableHead>
+                <TableHead className="text-right whitespace-nowrap">PO Value</TableHead>
+                <TableHead className="whitespace-nowrap">Delivery Status</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Invoice Value</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Payment</TableHead>
+                <TableHead className="whitespace-nowrap">Remarks</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -386,8 +375,8 @@ const SalesFunnelPage: React.FC = () => {
                 const quotation = quotationDetails[funnel.quotationId] || null;
                 return (
                   <TableRow key={funnel.id} className={isFunnelDisabled ? "opacity-60 bg-muted/10" : ""}>
-                    <TableCell className="text-sm">{new Date(funnel.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="text-xs whitespace-nowrap">{new Date(funnel.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         {funnel.quotationNumber}
                         {isFunnelDisabled && (
@@ -397,44 +386,50 @@ const SalesFunnelPage: React.FC = () => {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">{funnel.companyName}</TableCell>
-                    <TableCell className="text-sm">{quotation?.customerName || "—"}</TableCell>
+                    <TableCell className="text-sm font-medium whitespace-nowrap">{funnel.companyName}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">{quotation?.customerName || "—"}</TableCell>
                     {showSalespersonCol && (
-                      <TableCell className="text-sm font-medium">
+                      <TableCell className="text-sm font-medium whitespace-nowrap">
                         {users.find((u) => u.id === funnel.salesPersonId)?.name || funnel.salesPersonId || "—"}
                       </TableCell>
                     )}
-                    <TableCell className="text-right font-medium">${funnel.quotationValue.toLocaleString()}</TableCell>
-                    <TableCell className="text-sm">{funnel.followUpDate ? new Date(funnel.followUpDate).toLocaleDateString() : "—"}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        funnel.status === "Hot" ? "bg-red-100 text-red-800" :
-                        funnel.status === "Warm" ? "bg-orange-100 text-orange-800" :
-                        funnel.status === "Cold" ? "bg-gray-100 text-gray-800" :
-                        funnel.status === "Won" ? "bg-green-100 text-green-800" :
-                        funnel.status === "Lost" ? "bg-red-100 text-red-800" :
-                        funnel.status === "Closed" ? "bg-blue-100 text-blue-800" :
-                        "bg-purple-100 text-purple-800"
+                    <TableCell className="text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                      ${funnel.quotationValue.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{funnel.followUpDate ? new Date(funnel.followUpDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="text-center whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded text-[11px] font-semibold tracking-wide border ${
+                        funnel.status === "Hot" ? "bg-red-500/10 text-red-500 border-red-500/25" :
+                        funnel.status === "Warm" ? "bg-orange-500/10 text-orange-500 border-orange-500/25" :
+                        funnel.status === "Cold" ? "bg-gray-500/10 text-gray-500 border-gray-500/25" :
+                        funnel.status === "Won" ? "bg-green-500/10 text-green-500 border-green-500/25" :
+                        funnel.status === "Lost" ? "bg-red-600/10 text-red-600 border-red-600/25" :
+                        funnel.status === "Closed" ? "bg-blue-500/10 text-blue-500 border-blue-500/25" :
+                        "bg-purple-500/10 text-purple-500 border-purple-500/25"
                       }`}>
                         {funnel.status}
                       </span>
                     </TableCell>
-                    <TableCell className="text-sm">{getClosingMonthYear(funnel)}</TableCell>
-                    <TableCell className="text-sm">{getWonMonthYear(funnel)}</TableCell>
-                    <TableCell className="text-right text-sm">{funnel.poValue > 0 ? `$${funnel.poValue.toLocaleString()}` : "—"}</TableCell>
-                    <TableCell className="text-sm">{funnel.deliveryStatus}</TableCell>
-                    <TableCell className="text-right text-sm">{funnel.invoiceValue > 0 ? `$${funnel.invoiceValue.toLocaleString()}` : "—"}</TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="text-sm whitespace-nowrap">{funnel.closingDate ? new Date(funnel.closingDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">{getWonMonthYear(funnel)}</TableCell>
+                    <TableCell className="text-right text-sm font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                      {funnel.poValue > 0 ? `$${funnel.poValue.toLocaleString()}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">{funnel.deliveryStatus}</TableCell>
+                    <TableCell className="text-right text-sm font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                      {funnel.invoiceValue > 0 ? `$${funnel.invoiceValue.toLocaleString()}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-xs whitespace-nowrap">
                       {funnel.invoiceValue > 0 ? (
                         funnel.paymentStatus === "Partial" ?
-                          `Partial ($${(funnel.invoiceValue - funnel.pendingPayment).toLocaleString()} paid)` :
+                          <span className="text-amber-600 dark:text-amber-400 font-medium">Partial (${(funnel.invoiceValue - funnel.pendingPayment).toLocaleString()} paid)</span> :
                         funnel.paymentStatus === "Completed" ?
-                          "Completed" :
-                          `Pending ($${funnel.pendingPayment.toLocaleString()} due)`
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">Completed</span> :
+                          <span className="text-rose-600 dark:text-rose-400 font-medium">Pending (${funnel.pendingPayment.toLocaleString()} due)</span>
                       ) : "—"}
                     </TableCell>
-                    <TableCell className="text-sm max-w-[260px] break-words">{funnel.remarks ? funnel.remarks : "—"}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-xs max-w-[200px] truncate hover:whitespace-normal transition-all duration-200">{funnel.remarks ? funnel.remarks : "—"}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
@@ -449,7 +444,7 @@ const SalesFunnelPage: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className={isFunnelDisabled ? "text-success hover:bg-success/10 hover:text-success" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
+                          className={isFunnelDisabled ? "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-500" : "text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"}
                           onClick={() => handleToggleStatus(funnel.id, isFunnelDisabled)}
                           title={isFunnelDisabled ? "Enable Entry" : "Disable Entry"}
                         >
@@ -488,16 +483,12 @@ const SalesFunnelPage: React.FC = () => {
                     const shouldClearFollowUp = ["Closed", "Cancelled", "Lost"].includes(nextStatus);
                     const now = new Date();
                     const defaultMonth = now.toLocaleString(undefined, { month: "long" });
-                    const defaultYear = String(now.getFullYear());
                     setEditFunnel({
                       ...editFunnel,
                       status: nextStatus,
                       followUpDate: shouldClearFollowUp ? null : editFunnel.followUpDate,
-                      // If user switches to Won and closingMonth/year are empty, prefill them
-                        closingMonth: nextStatus === "Won" && !editFunnel.closingMonth ? defaultMonth : editFunnel.closingMonth,
-                        closingYear: nextStatus === "Won" && !editFunnel.closingYear ? defaultYear : editFunnel.closingYear,
-                        // Also prefill wonMonth when moving to Won
-                        wonMonth: nextStatus === "Won" && !editFunnel.wonMonth ? defaultMonth : editFunnel.wonMonth,
+                      closingDate: ["Cold", "Warm", "Hot", "Won"].includes(nextStatus) && !editFunnel.closingDate ? now.toISOString().split("T")[0] : editFunnel.closingDate,
+                      wonMonth: nextStatus === "Won" && !editFunnel.wonMonth ? defaultMonth : editFunnel.wonMonth,
                     });
                   }}
                 >
@@ -513,29 +504,11 @@ const SalesFunnelPage: React.FC = () => {
               {["Cold", "Warm", "Hot", "Won"].includes(editFunnel.status) && (
                 <>
                   <div className="space-y-2">
-                    <Label>Closing Month *</Label>
-                    <Select
-                      value={editFunnel.closingMonth || ""}
-                      onValueChange={(v) => setEditFunnel({ ...editFunnel, closingMonth: v })}
-                    >
-                      <SelectTrigger><SelectValue placeholder="Select month" /></SelectTrigger>
-                      <SelectContent>
-                        {closingMonthOptions.map((month) => (
-                          <SelectItem key={month} value={month}>{month}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Closing Year *</Label>
+                    <Label>Closing Date *</Label>
                     <Input
-                      type="number"
-                      value={editFunnel.closingYear || ""}
-                      onChange={(e) => setEditFunnel({ ...editFunnel, closingYear: e.target.value })}
-                      placeholder="2026"
-                      min="1900"
-                      max="2100"
+                      type="date"
+                      value={editFunnel.closingDate || ""}
+                      onChange={(e) => setEditFunnel({ ...editFunnel, closingDate: e.target.value })}
                       className="rounded-xl"
                     />
                   </div>
@@ -556,8 +529,6 @@ const SalesFunnelPage: React.FC = () => {
                           </SelectContent>
                         </Select>
                       </div>
-
-                      {/* wonYear removed - only wonMonth is tracked now */}
                     </>
                   )}
                 </>
