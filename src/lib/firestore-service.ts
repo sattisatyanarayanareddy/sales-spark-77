@@ -866,7 +866,7 @@ export async function fetchTeamPerformanceData(managerId: string, managerRole: s
 
   // Build performance row for each member
   return allMembers.map((member) => {
-    const memberFunnels = allFunnels.filter((f) => f.salesPersonId === member.id);
+    const memberFunnels = allFunnels.filter((f) => f.salesPersonId === member.id && !f.disabled);
     return {
       id: member.id,
       name: member.name,
@@ -1177,6 +1177,27 @@ export async function fetchNotificationsForManager(managerId: string): Promise<A
   }
 }
 
+export function getSafePendingPayment(
+  paymentStatus: "Pending" | "Partial" | "Completed",
+  invoiceValue: number,
+  pendingPayment: number
+): number {
+  if (paymentStatus === "Pending") {
+    return invoiceValue;
+  }
+  if (paymentStatus === "Completed") {
+    return 0;
+  }
+  // For Partial, pendingPayment must be > 0 and < invoiceValue
+  if (invoiceValue <= 1) {
+    return 0;
+  }
+  if (pendingPayment <= 0 || pendingPayment >= invoiceValue) {
+    return Math.max(1, Math.round(invoiceValue / 2));
+  }
+  return pendingPayment;
+}
+
 export async function approveQuotationDoc(notificationId: string, quotationId: string): Promise<void> {
   // Update notification status
   await updateDoc(doc(db, "notifications", notificationId), {
@@ -1199,6 +1220,12 @@ export async function approveQuotationDoc(notificationId: string, quotationId: s
 
   // Add to sales funnel if not already there
   const existingFunnel = await fetchSalesFunnelByQuotationId(quotationId);
+  const safePendingPayment = getSafePendingPayment(
+    quotation.paymentStatus ?? "Pending",
+    quotation.invoiceValue || 0,
+    quotation.pendingPayment ?? 0
+  );
+
   if (!existingFunnel) {
     await createSalesFunnelDoc({
       quotationId: quotation.id,
@@ -1211,12 +1238,24 @@ export async function approveQuotationDoc(notificationId: string, quotationId: s
       poValue: quotation.poValue || 0,
       deliveryStatus: quotation.deliveryStatus || "Pending",
       invoiceValue: quotation.invoiceValue || 0,
-      pendingPayment: quotation.pendingPayment ?? 0,
+      pendingPayment: safePendingPayment,
       paymentStatus: quotation.paymentStatus ?? "Pending",
       closingMonth: null,
       closingYear: null,
       closingDate: null,
       salesPersonId: quotation.salesPersonId,
+    });
+  } else {
+    await updateSalesFunnelDoc(existingFunnel.id, {
+      companyName: quotation.companyName,
+      subject: quotation.subject,
+      quotationValue: quotation.totalValue,
+      followUpDate: quotation.followUpDate,
+      poValue: quotation.poValue || 0,
+      deliveryStatus: quotation.deliveryStatus || "Pending",
+      invoiceValue: quotation.invoiceValue || 0,
+      pendingPayment: safePendingPayment,
+      paymentStatus: quotation.paymentStatus ?? "Pending",
     });
   }
 
@@ -1405,6 +1444,14 @@ export async function updateQuotationStatus(id: string, disabled: boolean): Prom
     disabled,
     updatedAt: serverTimestamp(),
   });
+
+  const funnel = await fetchSalesFunnelByQuotationId(id);
+  if (funnel) {
+    await updateDoc(doc(db, "salesFunnel", funnel.id), {
+      disabled,
+      updatedAt: serverTimestamp(),
+    });
+  }
 }
 
 export async function updateSalesFunnelStatus(id: string, disabled: boolean): Promise<void> {
@@ -1456,9 +1503,12 @@ export function subscribeToSalesFunnel(
   callback: (funnels: SalesFunnel[]) => void
 ): () => void {
   let q;
-  if (role === "general_manager" || role === "administrator" || role === "sub_manager") {
-    // Managers and admins see all sales funnels
+  if (role === "general_manager" || role === "administrator") {
+    // General managers and admins see all sales funnels
     q = collection(db, "salesFunnel");
+  } else if (role === "sub_manager") {
+    // Sub-managers see their own funnel entries, not the entire team, since team reports are available under Teams
+    q = query(collection(db, "salesFunnel"), where("salesPersonId", "==", userId));
   } else if (role === "sales") {
     // Salespeople only see their own sales funnel entries
     q = query(collection(db, "salesFunnel"), where("salesPersonId", "==", userId));

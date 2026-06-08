@@ -7,8 +7,6 @@ import {
   Users,
   LogOut,
   BarChart3,
-  Menu,
-  X,
   TrendingUp,
   UserCircle,
   FileText,
@@ -19,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { canManageTeam } from "@/lib/access-control";
 import { NotificationBell } from "@/components/NotificationBell";
+import { FiMenu } from "react-icons/fi";
+import { motion, AnimatePresence } from "framer-motion";
 
 const roleLabel = {
   administrator: "Admin",
@@ -38,6 +38,7 @@ const AppLayout: React.FC = () => {
   const { crmUser, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const location = useLocation();
 
   if (!crmUser) return null;
@@ -48,13 +49,11 @@ const AppLayout: React.FC = () => {
     ? [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { to: "/team", icon: Users, label: "Users" },
-        { to: "/calendar", icon: Calendar, label: "Calendar" },
       ]
     : crmUser.role === "general_manager"
     ? [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { to: "/team", icon: Users, label: "Team" },
-        { to: "/calendar", icon: Calendar, label: "Calendar" },
       ]
     : [
         { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -77,24 +76,64 @@ const AppLayout: React.FC = () => {
       <aside
         className={`
           fixed md:sticky top-0 left-0 z-50 md:z-auto
-          w-64 h-screen bg-sidebar text-sidebar-foreground
-          flex flex-col transition-transform duration-200 border-r border-sidebar-border/30
+          ${sidebarCollapsed ? "w-20" : "w-64"} h-screen bg-sidebar text-sidebar-foreground
+          flex flex-col transition-all duration-200 border-r border-sidebar-border/30
           ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}
       >
-        <div className="p-6 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white p-1 flex items-center justify-center shadow-md border border-sidebar-border/30">
-            <img src="/GCSS-Logoimg.png" alt="GCSS Logo" className="w-full h-full object-contain" />
+        <div className={`p-4 flex ${sidebarCollapsed ? "flex-col items-center gap-4" : "items-center justify-between"} border-b border-sidebar-border/10 transition-all duration-300`}>
+          <div className={`flex items-center ${sidebarCollapsed ? "justify-center" : "gap-3"}`}>
+            <div className="w-9 h-9 rounded-xl bg-white p-1 flex items-center justify-center shadow-md border border-sidebar-border/30 shrink-0">
+              <img src="/GCSS-Logoimg.png" alt="GCSS Logo" className="w-full h-full object-contain" />
+            </div>
+            {!sidebarCollapsed && (
+              <motion.span 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="font-display font-bold text-lg text-white truncate"
+              >
+                SalesERP
+              </motion.span>
+            )}
           </div>
-          <span className="font-display font-bold text-lg bg-gradient-to-r from-sidebar-primary to-ring bg-clip-text text-transparent">SalesERP</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto md:hidden text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={() => setMobileOpen(false)}
-          >
-            <X className="w-5 h-5" />
-          </Button>
+
+          <div className="flex items-center gap-1">
+            {/* Desktop Collapse Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`hidden md:flex text-sidebar-foreground hover:bg-sidebar-accent hover:text-white rounded-xl transition-all duration-200 items-center justify-center ${
+                sidebarCollapsed ? "w-10 h-10" : "w-9 h-9"
+              }`}
+              onClick={() => setSidebarCollapsed((prev) => !prev)}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <motion.div
+                animate={{ rotate: sidebarCollapsed ? 90 : 0 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="flex items-center justify-center"
+              >
+                <FiMenu className="w-5 h-5" />
+              </motion.div>
+            </Button>
+
+            {/* Mobile Close Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden text-sidebar-foreground hover:bg-sidebar-accent hover:text-white rounded-xl w-9 h-9 flex items-center justify-center"
+              onClick={() => setMobileOpen(false)}
+              title="Close sidebar"
+            >
+              <motion.div
+                animate={{ rotate: 90 }}
+                className="flex items-center justify-center"
+              >
+                <FiMenu className="w-5 h-5" />
+              </motion.div>
+            </Button>
+          </div>
         </div>
 
         <nav className="flex-1 px-3 space-y-1">
@@ -108,7 +147,7 @@ const AppLayout: React.FC = () => {
               onClick={() => setMobileOpen(false)}
             >
               <item.icon className="w-5 h-5" />
-              <span>{item.label}</span>
+              <span className={`${sidebarCollapsed ? "md:hidden" : ""}`}>{item.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -123,32 +162,35 @@ const AppLayout: React.FC = () => {
               setMobileOpen(false);
             }}
           >
-            <UserCircle className="w-4 h-4 mr-2" />
-            Profile
+            <UserCircle className={`w-4 h-4 ${sidebarCollapsed ? "mr-0 mx-auto" : "mr-2"}`} />
+            <span className={sidebarCollapsed ? "sr-only" : ""}>Profile</span>
           </Button>
-          <div className="profile-highlight flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-sidebar-accent/50 transition-colors" onClick={() => { navigate("/profile"); setMobileOpen(false); }}>
-            <div className="profile-avatar w-8 h-8 flex items-center justify-center text-xs font-semibold bg-sidebar-primary text-sidebar-primary-foreground rounded-full">
+          <div 
+            className={`profile-highlight flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-sidebar-accent/50 transition-colors ${
+              sidebarCollapsed ? "justify-center" : ""
+            }`} 
+            onClick={() => { navigate("/profile"); setMobileOpen(false); }}
+          >
+            <div className="profile-avatar w-8 h-8 flex items-center justify-center text-xs font-semibold bg-sidebar-primary text-sidebar-primary-foreground rounded-full shrink-0">
               {crmUser.profilePicture ? (
                 <img src={crmUser.profilePicture} alt={crmUser.name} className="w-full h-full rounded-full object-cover" />
               ) : (
                 (crmUser.name || "User").split(" ").filter(Boolean).map((n) => n[0]).join("").substring(0, 2).toUpperCase()
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate">{crmUser.name}</p>
-              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${roleBadgeClass[crmUser.role]}`}>
-                {roleLabel[crmUser.role]}
-              </Badge>
+            <div className={`flex-1 min-w-0 ${sidebarCollapsed ? "md:hidden" : ""}`}>
+              <p className="text-sm font-medium text-white truncate">{crmUser.name}</p>
+              <p className="text-xs text-white/75 truncate">Role: {roleLabel[crmUser.role]}</p>
             </div>
           </div>
           <Button
-            variant="ghost"
+            variant="destructive"
             size="sm"
-            className="w-full justify-start text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/80"
+            className="w-full justify-start px-3 py-2 rounded-xl"
             onClick={logout}
           >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+            <LogOut className={`w-4 h-4 ${sidebarCollapsed ? "mr-0 mx-auto" : "mr-2"}`} />
+            <span className={sidebarCollapsed ? "sr-only" : ""}>Sign Out</span>
           </Button>
         </div>
       </aside>
@@ -160,10 +202,10 @@ const AppLayout: React.FC = () => {
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden mr-2"
+              className="md:hidden mr-2 text-foreground hover:bg-accent hover:text-accent-foreground rounded-xl flex items-center justify-center"
               onClick={() => setMobileOpen(true)}
             >
-              <Menu className="w-5 h-5" />
+              <FiMenu className="w-5 h-5" />
             </Button>
             <h2 className="text-lg font-display font-semibold capitalize">
               {location.pathname.split("/")[1] || "Dashboard"}

@@ -7,6 +7,8 @@ import {
   exportToCSV,
   exportQuotationToPDF,
   createSalesFunnelDoc,
+  updateSalesFunnelDoc,
+  getSafePendingPayment,
   fetchSalesFunnelByQuotationId,
   requestQuotationApproval,
 } from "@/lib/firestore-service";
@@ -80,11 +82,18 @@ const QuotationsPage: React.FC = () => {
 
   if (!crmUser) return null;
 
-  const editableStatusOptions: [QuotationStatus, string][] = [
-    ["Draft", "Draft"],
-    ["Created", "Created"],
-    ["Ask for Approve", "Ask for Approve"],
-  ];
+  const editableStatusOptions: [QuotationStatus, string][] = crmUser.role === "sales"
+    ? [
+        ["Draft", "Draft"],
+        ["Created", "Created"],
+        ["Ask for Approve", "Ask for Approve"],
+      ]
+    : [
+        ["Draft", "Draft"],
+        ["Created", "Created"],
+        ["Approved", "Approved"],
+      ];
+
 
   // If quotation is already Approved by manager, allow salesperson to send it via email
   const canTransitionToSentMail = editQuotation?.status === "Approved";
@@ -164,8 +173,14 @@ const QuotationsPage: React.FC = () => {
           deliveryStatus: editQuotation.deliveryStatus,
         });
 
-        if ((statusToSave === "Approved" || statusToSave === "Sent Mail") && original?.status !== "Approved") {
+        if (statusToSave === "Approved") {
           const existingFunnel = await fetchSalesFunnelByQuotationId(editQuotation.id);
+          const safePendingPayment = getSafePendingPayment(
+            editQuotation.paymentStatus ?? "Pending",
+            editQuotation.invoiceValue || 0,
+            editQuotation.pendingPayment ?? 0
+          );
+
           if (!existingFunnel) {
             await createSalesFunnelDoc({
               quotationId: editQuotation.id,
@@ -179,11 +194,25 @@ const QuotationsPage: React.FC = () => {
               poValue: editQuotation.poValue || 0,
               deliveryStatus: editQuotation.deliveryStatus || "Pending",
               invoiceValue: editQuotation.invoiceValue || 0,
-              pendingPayment: editQuotation.pendingPayment ?? 0,
+              pendingPayment: safePendingPayment,
               paymentStatus: editQuotation.paymentStatus ?? "Pending",
               closingMonth: null,
               closingYear: null,
+              closingDate: null,
               salesPersonId: editQuotation.salesPersonId,
+            });
+          } else {
+            await updateSalesFunnelDoc(existingFunnel.id, {
+              companyName: editQuotation.companyName,
+              subject: editQuotation.subject,
+              quotationValue: editQuotation.totalValue,
+              followUpDate: editQuotation.followUpDate,
+              remarks: editQuotation.followUpNotes || "",
+              poValue: editQuotation.poValue || 0,
+              deliveryStatus: editQuotation.deliveryStatus || "Pending",
+              invoiceValue: editQuotation.invoiceValue || 0,
+              pendingPayment: safePendingPayment,
+              paymentStatus: editQuotation.paymentStatus ?? "Pending",
             });
           }
         }
@@ -265,8 +294,7 @@ const QuotationsPage: React.FC = () => {
   return (
     <div className="page-container space-y-6">
       {/* ── Page Header ── */}
-      <div className="dashboard-hero p-5 md:p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="section-title">Quotations</h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -304,7 +332,6 @@ const QuotationsPage: React.FC = () => {
             )}
           </div>
         </div>
-      </div>
 
       {/* ── Quotations Table ── */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
@@ -361,7 +388,9 @@ const QuotationsPage: React.FC = () => {
                         <p className="text-sm text-foreground/80 truncate">{q.subject}</p>
                       </TableCell>
                       <TableCell className="py-4 text-right">
-                        <span className="font-bold text-sm text-foreground">{formatCurrency(q.totalValue)}</span>
+                        <span className="font-bold text-sm text-foreground">
+                          {isQuotationDisabled ? "—" : formatCurrency(q.totalValue)}
+                        </span>
                       </TableCell>
                       <TableCell className="py-4"><StageBadge stage={q.status} /></TableCell>
                       <TableCell className="pr-6 py-4">
@@ -475,12 +504,16 @@ const QuotationsPage: React.FC = () => {
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(p.value)}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {viewQuotation.disabled ? "—" : formatCurrency(p.value)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-                <p className="text-right font-bold mt-2">Total: {formatCurrency(viewQuotation.totalValue)}</p>
+                <p className="text-right font-bold mt-2">
+                  Total: {viewQuotation.disabled ? "—" : formatCurrency(viewQuotation.totalValue)}
+                </p>
               </div>
               {(viewQuotation.status === "Approved" || viewQuotation.status === "Sent Mail") && (
                 <div className="rounded-2xl border border-border/70 bg-card p-4 mb-4">

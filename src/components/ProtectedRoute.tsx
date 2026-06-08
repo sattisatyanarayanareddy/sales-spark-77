@@ -35,7 +35,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   }
 
   if (!crmUser && !allowMissingCrmUser) {
-    return <Navigate to="/profile-setup" replace />;
+    // Redirect to dashboard when no CRM profile exists — admin creates users server-side
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (crmUser && !hasRoleAccess(crmUser.role, allowedRoles)) {

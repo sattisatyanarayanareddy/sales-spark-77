@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -9,10 +9,13 @@ import {
   updateQuotationDoc,
   fetchSalesFunnelByQuotationId,
   createSalesFunnelDoc,
+  updateSalesFunnelDoc,
+  getSafePendingPayment,
   requestQuotationApproval,
+  fetchAllUsers,
 } from "@/lib/firestore-service";
 import { getQuotationStatusForApprovalRequest } from "@/lib/quotation-status";
-import { Product, Customer, Quotation, QuotationStatus } from "@/types/crm";
+import { Product, Customer, Quotation, QuotationStatus, CRMUser } from "@/types/crm";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -38,12 +41,21 @@ const CreateQuotationPage: React.FC = () => {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [users, setUsers] = useState<CRMUser[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<QuotationStatus>("Created");
   const [originalQuotation, setOriginalQuotation] = useState<Quotation | null>(null);
-  // Salesperson sees: Draft, Created, Ask for Approve, Sent Mail (not Approved - that's manager-only)
-  const quotationStatusOptions = ["Draft", "Created", "Ask for Approve", "Sent Mail"] as const;
+  // Salesperson sees Ask for Approve, Managers/Admins see Approved instead.
+  const quotationStatusOptions = useMemo(() => {
+    if (!crmUser) return ["Draft", "Created"];
+    const isSalesperson = crmUser.role === "sales";
+    if (isSalesperson) {
+      return ["Draft", "Created", "Ask for Approve", "Sent Mail"] as QuotationStatus[];
+    } else {
+      return ["Draft", "Created", "Approved", "Sent Mail"] as QuotationStatus[];
+    }
+  }, [crmUser]);
 
   // Selected data
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -56,11 +68,13 @@ const CreateQuotationPage: React.FC = () => {
       if (!crmUser) return;
       try {
         setLoadingData(true);
-        const [customersData, productsData] = await Promise.all([
+        const [customersData, productsData, usersData] = await Promise.all([
           fetchCustomers(crmUser.id, crmUser.role),
           fetchProducts(crmUser.id, crmUser.role, crmUser.department),
+          fetchAllUsers(),
         ]);
 
+        setUsers(usersData);
         setCustomers(customersData.filter((c) => !c.disabled));
         setAvailableProducts(productsData.filter((p) => !p.disabled));
 
@@ -122,8 +136,40 @@ const CreateQuotationPage: React.FC = () => {
 
   if (!crmUser) return null;
 
+  const allowedCreators = useMemo(() => {
+    if (!crmUser) return null;
+    if (crmUser.role === "administrator" || crmUser.role === "general_manager") {
+      return null;
+    }
+
+    if (crmUser.role === "sub_manager") {
+      return [
+        crmUser.id,
+        ...users.filter((u) => u.managerId === crmUser.id && u.role === "sales").map((u) => u.id),
+      ];
+    }
+
+    if (crmUser.role === "sales") {
+      const teamSales = users.filter((u) => u.managerId === crmUser.managerId && u.role === "sales").map((u) => u.id);
+      const managerIds = crmUser.managerId ? [crmUser.managerId] : [];
+      return Array.from(new Set([crmUser.id, ...managerIds, ...teamSales]));
+    }
+
+    return [crmUser.id];
+  }, [crmUser, users]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!allowedCreators) return customers;
+    return customers.filter((c) => allowedCreators.includes(c.createdBy));
+  }, [customers, allowedCreators]);
+
+  const filteredProducts = useMemo(() => {
+    if (!allowedCreators) return availableProducts;
+    return availableProducts.filter((p) => allowedCreators.includes(p.createdBy));
+  }, [availableProducts, allowedCreators]);
+
   const handleSelectCustomer = (customerId: string) => {
-    const customer = customers.find((c) => c.id === customerId);
+    const customer = filteredCustomers.find((c) => c.id === customerId);
     setSelectedCustomer(customer || null);
   };
 
@@ -239,8 +285,14 @@ const CreateQuotationPage: React.FC = () => {
           });
           toast.success("Quotation submitted for manager approval");
         } else {
-          if ((statusToSave === "Approved" || statusToSave === "Sent Mail") && originalQuotation.status !== "Approved") {
+          if (statusToSave === "Approved") {
             const existingFunnel = await fetchSalesFunnelByQuotationId(quotationId);
+            const safePendingPayment = getSafePendingPayment(
+              originalQuotation.paymentStatus ?? "Pending",
+              originalQuotation.invoiceValue || 0,
+              originalQuotation.pendingPayment ?? 0
+            );
+
             if (!existingFunnel) {
               await createSalesFunnelDoc({
                 quotationId,
@@ -254,11 +306,25 @@ const CreateQuotationPage: React.FC = () => {
                 poValue: originalQuotation.poValue || 0,
                 deliveryStatus: originalQuotation.deliveryStatus || "Pending",
                 invoiceValue: originalQuotation.invoiceValue || 0,
-                pendingPayment: originalQuotation.pendingPayment ?? 0,
+                pendingPayment: safePendingPayment,
                 paymentStatus: originalQuotation.paymentStatus ?? "Pending",
                 closingMonth: null,
                 closingYear: null,
+                closingDate: null,
                 salesPersonId: originalQuotation.salesPersonId,
+              });
+            } else {
+              await updateSalesFunnelDoc(existingFunnel.id, {
+                companyName: selectedCustomer.companyName,
+                subject,
+                quotationValue: totalValue,
+                followUpDate: originalQuotation.followUpDate,
+                remarks: originalQuotation.followUpNotes || "",
+                poValue: originalQuotation.poValue || 0,
+                deliveryStatus: originalQuotation.deliveryStatus || "Pending",
+                invoiceValue: originalQuotation.invoiceValue || 0,
+                pendingPayment: safePendingPayment,
+                paymentStatus: originalQuotation.paymentStatus ?? "Pending",
               });
             }
           }
@@ -347,7 +413,7 @@ const CreateQuotationPage: React.FC = () => {
                 <SelectValue placeholder="Select a customer..." />
               </SelectTrigger>
               <SelectContent>
-                {customers.map((customer) => (
+                 {filteredCustomers.map((customer) => (
                   <SelectItem key={customer.id} value={customer.id}>
                     {customer.name} ({customer.companyName})
                   </SelectItem>
@@ -434,7 +500,7 @@ const CreateQuotationPage: React.FC = () => {
                   <CommandList>
                     <CommandEmpty>No items found.</CommandEmpty>
                     <CommandGroup>
-                      {availableProducts.map((product) => (
+                      {filteredProducts.map((product) => (
                         <CommandItem
                           key={product.id}
                           onSelect={() => handleSelectProductDirectly(product)}

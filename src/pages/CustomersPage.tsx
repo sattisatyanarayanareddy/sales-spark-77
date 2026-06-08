@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { subscribeToCustomers, updateCustomerStatus, createCustomer, updateCustomerDoc } from "../lib/firestore-service";
-import { Customer } from "../types/crm";
+import { subscribeToCustomers, subscribeToAllUsers, updateCustomerStatus, createCustomer, updateCustomerDoc } from "../lib/firestore-service";
+import { CRMUser, Customer } from "../types/crm";
 import { Plus, Lock, Unlock, Loader2, Edit } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -28,6 +28,7 @@ import {
 const CustomersPage = () => {
   const { crmUser } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [users, setUsers] = useState<CRMUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -44,11 +45,20 @@ const CustomersPage = () => {
   useEffect(() => {
     if (!crmUser) return;
     setLoading(true);
-    const unsubscribe = subscribeToCustomers(crmUser.id, crmUser.role, (data) => {
+
+    const unsubscribeCustomers = subscribeToCustomers(crmUser.id, crmUser.role, (data) => {
       setCustomers(data);
       setLoading(false);
     });
-    return unsubscribe;
+
+    const unsubscribeUsers = subscribeToAllUsers((allUsers) => {
+      setUsers(allUsers);
+    });
+
+    return () => {
+      unsubscribeCustomers();
+      unsubscribeUsers();
+    };
   }, [crmUser]);
 
   const handleAddCustomer = async (e: React.FormEvent) => {
@@ -133,6 +143,33 @@ const CustomersPage = () => {
       setSubmitting(false);
     }
   };
+
+  const allowedCustomerCreators = useMemo(() => {
+    if (!crmUser) return null;
+    if (crmUser.role === "administrator" || crmUser.role === "general_manager") {
+      return null;
+    }
+
+    if (crmUser.role === "sub_manager") {
+      return [
+        crmUser.id,
+        ...users.filter((u) => u.managerId === crmUser.id && u.role === "sales").map((u) => u.id),
+      ];
+    }
+
+    if (crmUser.role === "sales") {
+      const teamSales = users.filter((u) => u.managerId === crmUser.managerId && u.role === "sales").map((u) => u.id);
+      const managerIds = crmUser.managerId ? [crmUser.managerId] : [];
+      return Array.from(new Set([crmUser.id, ...managerIds, ...teamSales]));
+    }
+
+    return [crmUser.id];
+  }, [crmUser, users]);
+
+  const visibleCustomers = useMemo(() => {
+    if (!allowedCustomerCreators) return customers;
+    return customers.filter((customer) => allowedCustomerCreators.includes(customer.createdBy));
+  }, [allowedCustomerCreators, customers]);
 
   if (!crmUser) return null;
 
@@ -294,7 +331,7 @@ const CustomersPage = () => {
         transition={{ duration: 0.4 }}
         className="dashboard-panel"
       >
-        {customers.length === 0 ? (
+        {visibleCustomers.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">No customers yet. Add your first customer!</p>
           </div>
@@ -312,7 +349,7 @@ const CustomersPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {customers.map((customer) => {
+                {visibleCustomers.map((customer) => {
                   const isCustomerDisabled = !!customer.disabled;
                   return (
                     <TableRow key={customer.id} className={isCustomerDisabled ? "opacity-60 bg-muted/10" : ""}>

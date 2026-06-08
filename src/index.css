@@ -6,103 +6,103 @@
 
 @layer base {
   :root {
-    --background: 240 20% 98%;
-    --foreground: 224 71% 4%;
+    --background: 220 20% 98%;
+    --foreground: 225 60% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    --card-foreground: 225 60% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
+    --popover-foreground: 225 60% 10%;
 
-    --primary: 250 89% 62%;
+    --primary: 225 80% 52%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 250 50% 96%;
-    --secondary-foreground: 250 89% 30%;
+    --secondary: 225 50% 96%;
+    --secondary-foreground: 225 80% 30%;
 
-    --muted: 240 5% 95%;
-    --muted-foreground: 240 4% 46%;
+    --muted: 220 15% 95%;
+    --muted-foreground: 220 10% 46%;
 
-    --accent: 262 83% 58%;
+    --accent: 225 80% 52%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 346 84% 61%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 250 89% 62%;
+    --border: 220 15% 90%;
+    --input: 220 15% 90%;
+    --ring: 225 80% 52%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 240 10% 4%;
-    --sidebar-foreground: 240 5% 96%;
-    --sidebar-primary: 250 89% 62%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 5% 12%;
+    --sidebar-background: 225 85% 35%;
+    --sidebar-foreground: 225 20% 98%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 225 85% 35%;
+    --sidebar-accent: 225 80% 42%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 240 5% 15%;
-    --sidebar-ring: 250 89% 62%;
-    --sidebar-muted: 240 5% 65%;
+    --sidebar-border: 225 75% 45%;
+    --sidebar-ring: 0 0% 100%;
+    --sidebar-muted: 225 30% 80%;
 
     --font-body: "DM Sans", sans-serif;
     --font-display: "Space Grotesk", sans-serif;
-    --shadow-card-hover: 0 20px 40px -15px hsl(250 89% 62% / 0.12);
-    --bg-glow-1: hsl(250 89% 62% / 0.04);
-    --bg-glow-2: hsl(262 83% 58% / 0.05);
-    --app-main-background: 240 20% 98%;
+    --shadow-card-hover: 0 20px 40px -15px hsl(225 80% 52% / 0.12);
+    --bg-glow-1: hsl(225 80% 52% / 0.04);
+    --bg-glow-2: hsl(225 80% 52% / 0.05);
+    --app-main-background: 220 20% 98%;
     --dashboard-surface: 0 0% 100%;
-    --dashboard-surface-2: 250 50% 96%;
-    --dashboard-border: 240 6% 90%;
+    --dashboard-surface-2: 225 50% 96%;
+    --dashboard-border: 220 15% 90%;
   }
 
   .dark {
-    --background: 240 10% 4%;
-    --foreground: 240 5% 96%;
+    --background: 225 50% 8%;
+    --foreground: 225 10% 96%;
 
-    --card: 240 10% 6%;
-    --card-foreground: 240 5% 96%;
+    --card: 225 45% 12%;
+    --card-foreground: 225 10% 96%;
 
-    --popover: 240 10% 6%;
-    --popover-foreground: 240 5% 96%;
+    --popover: 225 45% 12%;
+    --popover-foreground: 225 10% 96%;
 
-    --primary: 250 89% 65%;
-    --primary-foreground: 240 10% 4%;
+    --primary: 225 85% 60%;
+    --primary-foreground: 225 50% 8%;
 
-    --secondary: 240 10% 10%;
-    --secondary-foreground: 240 5% 96%;
+    --secondary: 225 40% 15%;
+    --secondary-foreground: 225 85% 90%;
 
-    --muted: 240 10% 10%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 225 35% 15%;
+    --muted-foreground: 225 10% 65%;
 
-    --accent: 262 83% 65%;
-    --accent-foreground: 240 10% 4%;
+    --accent: 225 85% 60%;
+    --accent-foreground: 225 50% 8%;
 
     --destructive: 346 84% 61%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 5% 15%;
-    --input: 240 5% 15%;
-    --ring: 250 89% 65%;
+    --border: 225 35% 18%;
+    --input: 225 35% 18%;
+    --ring: 225 85% 60%;
 
-    --sidebar-background: 240 10% 4%;
-    --sidebar-foreground: 240 5% 96%;
-    --sidebar-primary: 250 89% 65%;
-    --sidebar-primary-foreground: 240 10% 4%;
-    --sidebar-accent: 240 5% 12%;
+    --sidebar-background: 225 50% 6%;
+    --sidebar-foreground: 225 10% 96%;
+    --sidebar-primary: 225 85% 60%;
+    --sidebar-primary-foreground: 225 50% 6%;
+    --sidebar-accent: 225 40% 12%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 240 5% 15%;
-    --sidebar-ring: 250 89% 65%;
-    --sidebar-muted: 240 5% 65%;
+    --sidebar-border: 225 35% 14%;
+    --sidebar-ring: 225 85% 60%;
+    --sidebar-muted: 225 15% 65%;
 
-    --shadow-card-hover: 0 20px 40px -15px hsl(250 89% 65% / 0.25);
-    --bg-glow-1: hsl(250 89% 65% / 0.08);
-    --bg-glow-2: hsl(262 83% 65% / 0.1);
-    --app-main-background: 240 10% 3%;
-    --dashboard-surface: 240 10% 6%;
-    --dashboard-surface-2: 240 10% 9%;
-    --dashboard-border: 240 5% 15%;
+    --shadow-card-hover: 0 20px 40px -15px hsl(225 85% 60% / 0.25);
+    --bg-glow-1: hsl(225 85% 60% / 0.08);
+    --bg-glow-2: hsl(225 85% 60% / 0.1);
+    --app-main-background: 225 50% 7%;
+    --dashboard-surface: 225 45% 12%;
+    --dashboard-surface-2: 225 40% 15%;
+    --dashboard-border: 225 35% 18%;
   }
 }
 
@@ -255,7 +255,7 @@
   }
 
   .sidebar-link-active {
-    @apply bg-primary/10 text-primary font-semibold shadow-sm border-l-4 border-primary;
+    @apply bg-white/10 text-white font-semibold shadow-sm border-l-4 border-white;
   }
 
   .sidebar-link-inactive {

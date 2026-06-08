@@ -17,11 +17,13 @@ const managers = [
   },
 ];
 
+import { UserRole } from "@/types/crm";
+
 const mockCrmUser = {
   id: "gm-1",
   name: "General Manager",
   email: "gm@example.com",
-  role: "general_manager" as const,
+  role: "general_manager" as UserRole,
   department: "sales",
   managerId: null,
   createdAt: "2024-01-01",
@@ -99,7 +101,7 @@ describe("TeamPage manager table", () => {
         totalValue: 120000,
         status: "Created",
         createdAt: "2024-02-01",
-      },
+      } as any,
     ]);
 
     vi.mocked(firestoreService.fetchSalesFunnel).mockResolvedValue([
@@ -116,7 +118,7 @@ describe("TeamPage manager table", () => {
         subject: "ERP rollout",
         quotationNumber: "QT-1001",
         createdAt: "2024-02-10",
-      },
+      } as any,
     ]);
 
     render(<TeamPage />);
@@ -165,7 +167,7 @@ describe("TeamPage manager table", () => {
         totalValue: 5000,
         status: "Draft",
         createdAt: "2024-02-01",
-      },
+      } as any,
       {
         id: "q-live",
         quotationNumber: "QT-1002",
@@ -174,7 +176,7 @@ describe("TeamPage manager table", () => {
         totalValue: 15000,
         status: "Created",
         createdAt: "2024-02-02",
-      },
+      } as any,
     ]);
 
     vi.mocked(firestoreService.fetchSalesFunnel).mockResolvedValue([]);

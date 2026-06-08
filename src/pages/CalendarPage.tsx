@@ -52,7 +52,7 @@ const STATUS_LABELS: Record<SalesFunnelStatus, string> = {
 const EVENT_CLASSES: Record<SalesFunnelStatus, string> = {
   Hot: "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-sm border-none shadow-red-500/10",
   Warm: "bg-gradient-to-r from-orange-400 to-amber-500 text-white shadow-sm border-none shadow-amber-500/10",
-  Cold: "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm border-none shadow-indigo-500/10",
+  Cold: "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm border-none shadow-purple-500/10",
   Won: "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-sm border-none shadow-emerald-500/10",
   Closed: "bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-sm border-none shadow-slate-500/10",
   Lost: "bg-gradient-to-r from-rose-800 to-red-950 text-rose-100 shadow-sm border-none shadow-rose-950/10",
@@ -63,12 +63,17 @@ const EVENT_CLASSES: Record<SalesFunnelStatus, string> = {
 const SIDEBAR_BADGE_CLASSES: Record<SalesFunnelStatus, string> = {
   Hot: "bg-red-500/10 text-red-600 border-red-500/20",
   Warm: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-  Cold: "bg-slate-500/10 text-slate-600 border-slate-500/20",
+  Cold: "bg-purple-500/10 text-purple-600 border-purple-500/20",
   Won: "bg-green-500/10 text-green-600 border-green-500/20",
-  Closed: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+  Closed: "bg-slate-500/10 text-slate-600 border-slate-500/20",
   Lost: "bg-rose-950/10 text-rose-600 border-rose-950/20",
   Cancelled: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
 };
+
+interface CalendarEvent {
+  deal: SalesFunnel;
+  type: "followUp" | "closing";
+}
 
 const CalendarPage: React.FC = () => {
   const { crmUser } = useAuth();
@@ -88,7 +93,7 @@ const CalendarPage: React.FC = () => {
 
   // Detail & Action Modal States
   const [selectedDeal, setSelectedDeal] = useState<SalesFunnel | null>(null);
-  const [selectedDayDeals, setSelectedDayDeals] = useState<{ date: Date; deals: SalesFunnel[] } | null>(null);
+  const [selectedDayDeals, setSelectedDayDeals] = useState<{ date: Date; events: CalendarEvent[] } | null>(null);
   const [quotationDetail, setQuotationDetail] = useState<Quotation | null>(null);
   const [loadingQuotation, setLoadingQuotation] = useState(false);
   
@@ -259,15 +264,21 @@ const CalendarPage: React.FC = () => {
     return `${y}-${m}-${d}`;
   };
 
-  // Group deals by their closingDate
+  // Group deals by both followUpDate and closingDate
   const dealsByDate = useMemo(() => {
-    const map: Record<string, SalesFunnel[]> = {};
+    const map: Record<string, CalendarEvent[]> = {};
     filteredFunnels.forEach((deal) => {
+      if (deal.followUpDate) {
+        if (!map[deal.followUpDate]) {
+          map[deal.followUpDate] = [];
+        }
+        map[deal.followUpDate].push({ deal, type: "followUp" });
+      }
       if (deal.closingDate) {
         if (!map[deal.closingDate]) {
           map[deal.closingDate] = [];
         }
-        map[deal.closingDate].push(deal);
+        map[deal.closingDate].push({ deal, type: "closing" });
       }
     });
     return map;
@@ -399,6 +410,58 @@ const CalendarPage: React.FC = () => {
             </Select>
           </div>
         </div>
+        {/* Calendar Legend */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5 p-4 bg-card border border-border/80 rounded-2xl text-xs">
+          <span className="font-semibold text-muted-foreground mr-1">Legend:</span>
+          
+          {/* Follow-up */}
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded bg-gradient-to-r from-blue-500 to-blue-700 shadow shadow-blue-500/10" />
+            <span className="font-medium text-foreground">Follow-up Date (📞)</span>
+          </div>
+
+          <div className="h-4 w-px bg-border/60 hidden sm:block" />
+
+          {/* Target Closings / Stages */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-[11px] font-bold text-muted-foreground/80 uppercase tracking-wider">Target Closing Stage (🎯):</span>
+            
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-rose-500 to-red-600 shadow shadow-red-500/10" />
+              <span className="font-medium text-foreground">Hot</span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-orange-400 to-amber-500 shadow shadow-amber-500/10" />
+              <span className="font-medium text-foreground">Warm</span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-violet-500 to-purple-600 shadow shadow-purple-500/10" />
+              <span className="font-medium text-foreground">Cold</span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-emerald-500 to-green-600 shadow shadow-emerald-500/10" />
+              <span className="font-medium text-foreground">Won</span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-slate-500 to-slate-600 shadow shadow-slate-500/10" />
+              <span className="font-medium text-foreground">Closed</span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-rose-800 to-red-950 shadow shadow-rose-950/10" />
+              <span className="font-medium text-foreground">Lost</span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-gradient-to-r from-yellow-500 to-amber-600 shadow shadow-amber-600/10" />
+              <span className="font-medium text-foreground">Cancelled</span>
+            </div>
+          </div>
+        </div>
 
         {/* Workspace Layout */}
         {loadingData ? (
@@ -430,7 +493,7 @@ const CalendarPage: React.FC = () => {
                         key={idx}
                         onClick={() => {
                           if (dayDeals.length > 0) {
-                            setSelectedDayDeals({ date: day.date, deals: dayDeals });
+                            setSelectedDayDeals({ date: day.date, events: dayDeals });
                           }
                         }}
                         className={`min-h-[145px] xl:min-h-[165px] bg-card p-3 flex flex-col justify-between transition-all duration-150 ${
@@ -452,39 +515,49 @@ const CalendarPage: React.FC = () => {
 
                         {/* Stacking Events/Deals as Google Calendar Event Strips */}
                         <div className="flex-1 space-y-1.5 mt-1.5 overflow-y-auto max-h-[95px] xl:max-h-[115px] scrollbar-thin">
-                          {dayDeals.slice(0, 2).map((deal) => (
-                            <Tooltip key={deal.id}>
-                              <TooltipTrigger asChild>
-                                <div
-                                  onClick={(e) => {
-                                    e.stopPropagation(); // Stop opening the day deals list dialog
-                                    setSelectedDeal(deal);
-                                  }}
-                                  className={`px-3 py-2 rounded-xl shadow-md transition-all duration-200 hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98] flex flex-col justify-center gap-1 cursor-pointer border border-white/10 select-none min-h-[48px] ${
-                                    EVENT_CLASSES[deal.status]
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-1.5 w-full">
-                                    <span className="font-bold text-[11px] xl:text-xs truncate leading-snug">{deal.companyName}</span>
-                                    <span className="font-extrabold text-[9px] xl:text-[10px] bg-white/20 px-1.5 py-0.5 rounded-md shrink-0">
-                                      ${Math.round(deal.quotationValue / 1000)}k
+                          {dayDeals.slice(0, 2).map((event, eventIdx) => {
+                            const deal = event.deal;
+                            const isFollowUp = event.type === "followUp";
+                            return (
+                              <Tooltip key={`${deal.id}-${event.type}-${eventIdx}`}>
+                                <TooltipTrigger asChild>
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation(); // Stop opening the day deals list dialog
+                                      setSelectedDeal(deal);
+                                    }}
+                                    className={`px-3 py-2 rounded-xl shadow-md transition-all duration-200 hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98] flex flex-col justify-center gap-1 cursor-pointer border border-white/10 select-none min-h-[48px] ${
+                                      isFollowUp
+                                        ? "bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-sm border-none shadow-blue-500/10"
+                                        : EVENT_CLASSES[deal.status]
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-1.5 w-full">
+                                      <span className="font-bold text-[11px] xl:text-xs truncate leading-snug">
+                                        {isFollowUp ? "📞 " : "🎯 "}{deal.companyName}
+                                      </span>
+                                      <span className="font-extrabold text-[9px] xl:text-[10px] bg-white/20 px-1.5 py-0.5 rounded-md shrink-0">
+                                        ${Math.round(deal.quotationValue / 1000)}k
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] xl:text-[11px] opacity-90 truncate leading-snug font-medium text-left">
+                                      {deal.subject}
+                                    </div>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="p-3 max-w-xs rounded-xl bg-card border border-border/80 shadow-lg text-foreground">
+                                  <p className="font-bold text-xs">{isFollowUp ? "Follow-up: " : "Target Close: "}{deal.companyName}</p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">{deal.subject}</p>
+                                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/40 text-[10px]">
+                                    <span className="font-semibold text-primary">${deal.quotationValue.toLocaleString()}</span>
+                                    <span className="font-medium text-muted-foreground">
+                                      {isFollowUp ? `Follow-up: ${deal.followUpDate || "—"}` : `Closing: ${deal.closingDate || "—"}`}
                                     </span>
                                   </div>
-                                  <div className="text-[10px] xl:text-[11px] opacity-90 truncate leading-snug font-medium text-left">
-                                    {deal.subject}
-                                  </div>
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="p-3 max-w-xs rounded-xl bg-card border border-border/80 shadow-lg text-foreground">
-                                <p className="font-bold text-xs">{deal.companyName}</p>
-                                <p className="text-[10px] text-muted-foreground mt-0.5">{deal.subject}</p>
-                                <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/40 text-[10px]">
-                                  <span className="font-semibold text-primary">${deal.quotationValue.toLocaleString()}</span>
-                                  <span className="font-medium text-muted-foreground">Follow-up: {deal.followUpDate || "—"}</span>
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          ))}
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })}
                           
                           {/* Excess item indicator */}
                           {dayDeals.length > 2 && (
@@ -514,36 +587,43 @@ const CalendarPage: React.FC = () => {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2 mt-2 max-h-[350px] overflow-y-auto pr-1">
-              {selectedDayDeals?.deals.map((deal) => (
-                <div
-                  key={deal.id}
-                  onClick={() => {
-                    setSelectedDeal(deal);
-                    setSelectedDayDeals(null);
-                  }}
-                  className={`p-3 rounded-xl border bg-card hover:bg-muted/40 cursor-pointer transition-all duration-150 flex justify-between items-center ${
-                    deal.status === "Hot" ? "border-red-500/20 hover:border-red-500/40" :
-                    deal.status === "Warm" ? "border-orange-500/20 hover:border-orange-500/40" :
-                    deal.status === "Won" ? "border-green-500/20 hover:border-green-500/40" :
-                    "border-border/60 hover:border-primary/20"
-                  }`}
-                >
-                  <div>
-                    <h5 className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                      {deal.companyName}
-                      <span className={`px-1.5 py-0.2 rounded text-[8px] font-semibold border ${SIDEBAR_BADGE_CLASSES[deal.status]}`}>
-                        {deal.status}
+              {selectedDayDeals?.events.map((event, eventIdx) => {
+                const deal = event.deal;
+                const isFollowUp = event.type === "followUp";
+                return (
+                  <div
+                    key={`${deal.id}-${event.type}-${eventIdx}`}
+                    onClick={() => {
+                      setSelectedDeal(deal);
+                      setSelectedDayDeals(null);
+                    }}
+                    className={`p-3 rounded-xl border bg-card hover:bg-muted/40 cursor-pointer transition-all duration-150 flex justify-between items-center ${
+                      isFollowUp ? "border-blue-500/20 hover:border-blue-500/40" :
+                      deal.status === "Hot" ? "border-red-500/20 hover:border-red-500/40" :
+                      deal.status === "Warm" ? "border-orange-500/20 hover:border-orange-500/40" :
+                      deal.status === "Won" ? "border-green-500/20 hover:border-green-500/40" :
+                      "border-border/60 hover:border-primary/20"
+                    }`}
+                  >
+                    <div>
+                      <h5 className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                        {isFollowUp ? "📞 " : "🎯 "}{deal.companyName}
+                        <span className={`px-1.5 py-0.2 rounded text-[8px] font-semibold border ${
+                          isFollowUp ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : SIDEBAR_BADGE_CLASSES[deal.status]
+                        }`}>
+                          {isFollowUp ? "Follow-up" : deal.status}
+                        </span>
+                      </h5>
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5 max-w-[220px]">{deal.subject}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-extrabold text-xs text-primary">
+                        ${deal.quotationValue.toLocaleString()}
                       </span>
-                    </h5>
-                    <p className="text-[10px] text-muted-foreground truncate mt-0.5 max-w-[220px]">{deal.subject}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="font-extrabold text-xs text-indigo-600 dark:text-indigo-400">
-                      ${deal.quotationValue.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </DialogContent>
         </Dialog>
@@ -581,7 +661,7 @@ const CalendarPage: React.FC = () => {
                     <div className="mt-4 pt-4 border-t border-border/40 grid grid-cols-2 gap-4">
                       <div>
                         <span className="text-[10px] text-muted-foreground block">Quotation Value</span>
-                        <span className="text-base font-extrabold text-indigo-600 dark:text-indigo-400">
+                        <span className="text-base font-extrabold text-primary">
                           ${selectedDeal.quotationValue.toLocaleString()}
                         </span>
                       </div>
@@ -728,7 +808,7 @@ const CalendarPage: React.FC = () => {
                     <Button
                       onClick={handleSaveUpdate}
                       disabled={savingAction || !rescheduleRemarks.trim() || !rescheduleClosingDate}
-                      className="w-full h-10 rounded-xl bg-gradient-to-r from-primary to-violet-600 hover:from-primary/95 hover:to-violet-600/95 text-white font-medium text-xs shadow"
+                      className="w-full h-10 rounded-xl bg-gradient-to-r from-primary to-blue-700 hover:from-primary/95 hover:to-blue-700/95 text-white font-medium text-xs shadow"
                     >
                       {savingAction ? (
                         <>

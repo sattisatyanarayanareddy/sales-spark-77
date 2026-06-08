@@ -132,7 +132,7 @@ const LoginPage: React.FC = () => {
             </div>
 
 
-            <Button type="submit" className="w-full h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-semibold rounded-xl transition-all duration-200" disabled={loading}>
+            <Button type="submit" className="w-full h-11 bg-gradient-to-r from-primary to-blue-700 hover:from-primary/90 hover:to-blue-700/90 text-white font-semibold rounded-xl transition-all duration-200" disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {loading ? "Signing in..." : "Sign In"}
             </Button>

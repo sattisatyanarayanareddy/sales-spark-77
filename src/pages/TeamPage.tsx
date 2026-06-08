@@ -193,7 +193,7 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
           ]);
 
           const nonDraftQuotations = qs.filter((quotation) => quotation.status !== "Draft");
-          const nonDraftFunnels = sf.filter((item) => item.status !== "Draft");
+          const nonDraftFunnels = sf;
 
           const funnelByQuotationNumber = new Map<string, SalesFunnel>();
           nonDraftFunnels.forEach((item) => {
@@ -260,7 +260,7 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
           ]);
 
           const nonDraftQuotations = qs.filter((quotation) => quotation.status !== "Draft");
-          const nonDraftFunnels = sf.filter((item) => item.status !== "Draft" && item.salesPersonId === activeUser.id);
+          const nonDraftFunnels = sf.filter((item) => item.salesPersonId === activeUser.id);
 
           const funnelByQuotationNumber = new Map<string, SalesFunnel>();
           nonDraftFunnels.forEach((item) => {
@@ -326,7 +326,7 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
         ]);
 
         const nonDraftQuotations = allQuotations.filter((quotation) => quotation.status !== "Draft");
-        const nonDraftFunnels = allFunnels.filter((funnel) => funnel.status !== "Draft");
+        const nonDraftFunnels = allFunnels;
         const filteredQuotations = nonDraftQuotations.filter((quote) => teamIds.includes(quote.salesPersonId));
         const filteredFunnels = nonDraftFunnels.filter((funnel) => teamIds.includes(funnel.salesPersonId));
         const funnelByQuotationNumber = new Map<string, SalesFunnel>();
@@ -400,22 +400,15 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
   const totalQuotationValue = combinedRows.reduce((s, row) => s + row.value, 0);
   const totalPOValue = combinedRows.reduce((s, row) => s + row.poValue, 0);
   const totalInvoiceValue = combinedRows.reduce((s, row) => s + row.invoiceValue, 0);
-  const totalPaymentsReceived = combinedRows.reduce((sum, row) => {
-    const inv = row.invoiceValue || 0;
-    const pending = row.pendingPayment ?? 0;
-    if (!inv) return sum;
-    if (row.paymentStatus === "Completed") return sum + inv;
-    if (row.paymentStatus === "Partial") return sum + Math.max(0, inv - pending);
-    return sum;
-  }, 0);
+  const totalPaymentDues = combinedRows.reduce((sum, row) => sum + (row.pendingPayment ?? 0), 0);
   const wonDeals = combinedRows.filter((row) => row.status === "Won").length;
 
   const stats = [
     { label: "Active Deals", value: activeDeals, icon: Activity, color: "text-blue-500", bg: "bg-blue-500/10" },
-    { label: "Quotation Value", value: fmtCurrency(totalQuotationValue), icon: FileText, color: "text-violet-500", bg: "bg-violet-500/10" },
+    { label: "Quotation Value", value: fmtCurrency(totalQuotationValue), icon: FileText, color: "text-primary", bg: "bg-primary/10" },
     { label: "PO Value", value: fmtCurrency(totalPOValue), icon: DollarSign, color: "text-amber-500", bg: "bg-amber-500/10" },
     { label: "Invoice Value", value: fmtCurrency(totalInvoiceValue), icon: Activity, color: "text-teal-500", bg: "bg-teal-500/10" },
-    { label: "Payments Received", value: fmtCurrency(totalPaymentsReceived), icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-600/10" },
+    { label: "Payment Due", value: fmtCurrency(totalPaymentDues), icon: AlertCircle, color: "text-rose-600", bg: "bg-rose-600/10" },
     { label: "Won Deals", value: wonDeals, icon: CheckCircle, color: "text-green-500", bg: "bg-green-500/10" },
   ];
 
@@ -433,7 +426,7 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
         className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between p-6 border-b border-border bg-gradient-to-r from-primary/5 to-violet-500/5">
+        <div className="flex items-start justify-between p-6 border-b border-border bg-gradient-to-r from-primary/5 to-primary/10">
           <div>
             <h2 className="text-xl font-bold text-foreground">{activeUser.name}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">{activeUser.email}</p>
@@ -478,7 +471,7 @@ const SalespersonModal: React.FC<SalespersonModalProps> = ({ user, onClose }) =>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-5 border-b border-border">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-5 border-b border-border">
               {stats.map((s) => (
                 <div
                   key={s.label}
@@ -857,7 +850,7 @@ const TeamPage: React.FC = () => {
               </Button>
             </DialogTrigger>
             <DialogContent className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-0 bg-card/95 backdrop-blur-md">
-              <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-violet-500/5 to-transparent">
+              <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-blue-500/5 to-transparent">
                 <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
                   <Plus className="w-5 h-5" />
                 </div>
@@ -1015,7 +1008,7 @@ const TeamPage: React.FC = () => {
                 <Label htmlFor="companyName">Company Name</Label>
                 <Input id="companyName" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Corp" className="rounded-xl" />
               </div>
-              <Button type="submit" className="w-full rounded-xl h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-medium mt-2" disabled={submitting || !isPasswordValid || !passwordsMatch}>
+              <Button type="submit" className="w-full rounded-xl h-11 bg-gradient-to-r from-primary to-blue-700 hover:from-primary/90 hover:to-blue-700/90 text-white font-medium mt-2" disabled={submitting || !isPasswordValid || !passwordsMatch}>
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 {submitting ? "Adding..." : "Add Member"}
               </Button>
@@ -1038,7 +1031,7 @@ const TeamPage: React.FC = () => {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Managers</p>
               <h3 className="text-3xl font-extrabold mt-1 text-foreground">{managersCount}</h3>
             </div>
-            <div className="p-3 rounded-2xl bg-violet-500/10 text-violet-500">
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
               <Shield className="w-5 h-5" />
             </div>
           </div>
@@ -1059,7 +1052,7 @@ const TeamPage: React.FC = () => {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Managers</p>
                 <h3 className="text-3xl font-extrabold mt-1 text-foreground">{managersCount}</h3>
               </div>
-              <div className="p-3 rounded-2xl bg-violet-500/10 text-violet-500">
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
                 <Shield className="w-5 h-5" />
               </div>
             </div>
@@ -1102,7 +1095,7 @@ const TeamPage: React.FC = () => {
       <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-lg hover:shadow-xl transition-shadow duration-300">
         <Table>
           <TableHeader>
-            <TableRow className="bg-gradient-to-r from-primary/5 via-violet-500/5 to-transparent hover:bg-gradient-to-r hover:from-primary/8 hover:via-violet-500/8 hover:to-transparent transition-colors border-b border-border/60">
+            <TableRow className="bg-gradient-to-r from-primary/5 via-blue-500/5 to-transparent hover:bg-gradient-to-r hover:from-primary/8 hover:via-blue-500/8 hover:to-transparent transition-colors border-b border-border/60">
               <TableHead className="font-semibold text-foreground/90">Name</TableHead>
               <TableHead className="font-semibold text-foreground/90">Email</TableHead>
               <TableHead className="font-semibold text-foreground/90">Role</TableHead>
@@ -1164,7 +1157,7 @@ const TeamPage: React.FC = () => {
       {/* Edit User Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="w-full max-w-md max-h-[80vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-0 bg-card/95 backdrop-blur-md">
-          <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-violet-500/5 to-transparent">
+          <div className="flex items-center gap-3 p-6 border-b border-border bg-gradient-to-r from-primary/10 via-blue-500/5 to-transparent">
             <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
               <Pencil className="w-5 h-5" />
             </div>
@@ -1296,7 +1289,7 @@ const TeamPage: React.FC = () => {
               <Button type="button" variant="outline" className="flex-1 rounded-xl h-11" onClick={() => setShowEditDialog(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="flex-1 rounded-xl h-11 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-medium" disabled={submitting}>
+              <Button type="submit" className="flex-1 rounded-xl h-11 bg-gradient-to-r from-primary to-blue-700 hover:from-primary/90 hover:to-blue-700/90 text-white font-medium" disabled={submitting}>
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 {submitting ? "Saving..." : "Save Changes"}
               </Button>

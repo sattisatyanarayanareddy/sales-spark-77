@@ -170,11 +170,11 @@ export const SALES_FUNNEL_STATUS_LABELS: Record<SalesFunnelStatus, string> = {
 export const SALES_FUNNEL_STATUS_COLORS: Record<SalesFunnelStatus, string> = {
   Hot: "bg-red-500/10 text-red-500",
   Warm: "bg-orange-500/10 text-orange-500",
-  Cold: "bg-gray-500/10 text-gray-500",
-  Closed: "bg-green-500/10 text-green-500",
+  Cold: "bg-purple-500/10 text-purple-500",
+  Closed: "bg-slate-500/10 text-slate-500",
   Cancelled: "bg-yellow-500/10 text-yellow-500",
-  Lost: "bg-red-600/10 text-red-600",
-  Won: "bg-green-600/10 text-green-600",
+  Lost: "bg-rose-950/10 text-rose-600",
+  Won: "bg-green-500/10 text-green-500",
 };
 
 export interface AppNotification {

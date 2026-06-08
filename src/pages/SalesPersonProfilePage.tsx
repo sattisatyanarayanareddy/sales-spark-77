@@ -10,7 +10,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Upload, Save, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 
 const SalesPersonProfilePage: React.FC = () => {
   const { crmUser, setCrmUser } = useAuth();
@@ -26,14 +25,11 @@ const SalesPersonProfilePage: React.FC = () => {
   });
   const [profilePicture, setProfilePicture] = useState<string | null>(crmUser?.profilePicture || null);
   const [signature, setSignature] = useState<string | null>(crmUser?.signature || null);
-  const [signatureMode, setSignatureMode] = useState<"draw" | "upload">("draw");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
   const [sigError, setSigError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLInputElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
 
   useEffect(() => {
     if (crmUser) {
@@ -107,90 +103,6 @@ const SalesPersonProfilePage: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    e.preventDefault();
-
-    const rect = canvas.getBoundingClientRect();
-    let x, y;
-    if ("touches" in e) {
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
-    } else {
-      x = e.nativeEvent.clientX - rect.left;
-      y = e.nativeEvent.clientY - rect.top;
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    setIsDrawing(true);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    e.preventDefault();
-
-    const rect = canvas.getBoundingClientRect();
-    let x, y;
-    if ("touches" in e) {
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
-    } else {
-      x = e.nativeEvent.clientX - rect.left;
-      y = e.nativeEvent.clientY - rect.top;
-    }
-
-    ctx.lineTo(x, y);
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignatureCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  const getCanvasFile = async (): Promise<File | null> => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-
-    // Check if the canvas is blank
-    const blank = document.createElement('canvas');
-    blank.width = canvas.width;
-    blank.height = canvas.height;
-    if (canvas.toDataURL() === blank.toDataURL()) {
-      return null;
-    }
-
-    return new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const file = new File([blob], `signature-${crmUser.id}.png`, { type: "image/png" });
-          resolve(file);
-        } else {
-          resolve(null);
-        }
-      }, "image/png");
-    });
-  };
-
   const handleSave = async () => {
     if (!formData.name || !formData.email || !formData.designation || !formData.companyName) {
       toast.error("Name, email, designation, and company name are required");
@@ -208,12 +120,7 @@ const SalesPersonProfilePage: React.FC = () => {
       }
 
       // Handle signature upload if changed
-      if (signatureMode === "draw") {
-        const drawnFile = await getCanvasFile();
-        if (drawnFile) {
-          finalSignatureUrl = await uploadImageToCloudinary(drawnFile, "signatures");
-        }
-      } else if (signatureMode === "upload" && signatureFile) {
+      if (signatureFile) {
         finalSignatureUrl = await uploadImageToCloudinary(signatureFile, "signatures");
       }
 
@@ -416,84 +323,35 @@ const SalesPersonProfilePage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle>Signature</CardTitle>
-            <CardDescription>Draw or upload your signature to be displayed on quotations</CardDescription>
+            <CardDescription>Upload your signature to be displayed on quotations</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-2 p-1 bg-muted rounded-lg max-w-[280px]">
-              <button
+            <div className="space-y-3">
+              <input
+                ref={signatureInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleSignatureFileSelect}
+                className="hidden"
+              />
+              <Button
                 type="button"
-                onClick={() => setSignatureMode("draw")}
-                className={cn(
-                  "flex-1 text-xs py-1.5 px-3 rounded-md font-medium transition-all",
-                  signatureMode === "draw" ? "bg-background shadow text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-                )}
+                variant="outline"
+                onClick={() => signatureInputRef.current?.click()}
               >
-                Draw Signature
-              </button>
-              <button
-                type="button"
-                onClick={() => setSignatureMode("upload")}
-                className={cn(
-                  "flex-1 text-xs py-1.5 px-3 rounded-md font-medium transition-all",
-                  signatureMode === "upload" ? "bg-background shadow text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Upload Image
-              </button>
+                <Upload className="w-4 h-4 mr-2" />
+                Choose Signature Image
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Upload a PNG, JPG or WebP image. Transparent PNG is highly recommended. Max 2MB.
+              </p>
+              {sigError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="w-4 h-4" />
+                  <AlertDescription>{sigError}</AlertDescription>
+                </Alert>
+              )}
             </div>
-
-            {signatureMode === "draw" ? (
-              <div className="space-y-2">
-                <Label>Draw your signature inside the box below</Label>
-                <div className="relative border-2 border-dashed border-border rounded-lg bg-white overflow-hidden max-w-[450px]">
-                  <canvas
-                    ref={canvasRef}
-                    width={450}
-                    height={150}
-                    className="cursor-crosshair w-full block bg-white"
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                  />
-                  <div className="absolute bottom-2 right-2 flex gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={clearSignatureCanvas} className="h-8 text-xs">
-                      Clear
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  ref={signatureInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleSignatureFileSelect}
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => signatureInputRef.current?.click()}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Choose Signature Image
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Upload a PNG, JPG or WebP image. Transparent PNG is highly recommended. Max 2MB.
-                </p>
-                {sigError && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="w-4 h-4" />
-                    <AlertDescription>{sigError}</AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            )}
 
             {signature && (
               <div className="space-y-2 mt-4 pt-4 border-t">

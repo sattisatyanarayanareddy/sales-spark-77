@@ -7,11 +7,13 @@ const mockSubscribeToAllUsers = vi.fn();
 const mockUpdateSalesFunnelDoc = vi.fn();
 const mockFetchQuotationById = vi.fn();
 
+import { CRMUser, UserRole } from "@/types/crm";
+
 const mockCrmUser = {
   id: "sales-1",
   name: "Salesperson",
   email: "sales@example.com",
-  role: "sales" as const,
+  role: "sales" as UserRole,
   department: "sales",
   managerId: null,
   createdAt: "2024-01-01",

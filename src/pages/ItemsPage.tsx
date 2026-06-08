@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { subscribeToProducts, updateProductStatus, createProduct, updateProduct, fetchUnits, createUnit, UnitItem } from "../lib/firestore-service";
-import { Product } from "../types/crm";
+import { subscribeToProducts, subscribeToAllUsers, updateProductStatus, createProduct, updateProduct, fetchUnits, createUnit, UnitItem } from "../lib/firestore-service";
+import { CRMUser, Product } from "../types/crm";
 import { Plus, Lock, Unlock, Pencil, Search, AlertCircle, CheckCircle2, X, Image as ImageIcon, Loader2 } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -19,6 +19,7 @@ import {
 
 const ItemsPage = () => {
   const { crmUser } = useAuth();
+  const [users, setUsers] = useState<CRMUser[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -55,6 +56,33 @@ const ItemsPage = () => {
     setUnitSuggestions(matches);
     setShowUnitSuggestions(true);
   };
+
+  const allowedProductCreators = useMemo(() => {
+    if (!crmUser) return null;
+    if (crmUser.role === "administrator" || crmUser.role === "general_manager") {
+      return null;
+    }
+
+    if (crmUser.role === "sub_manager") {
+      return [
+        crmUser.id,
+        ...users.filter((u) => u.managerId === crmUser.id && u.role === "sales").map((u) => u.id),
+      ];
+    }
+
+    if (crmUser.role === "sales") {
+      const teamSales = users.filter((u) => u.managerId === crmUser.managerId && u.role === "sales").map((u) => u.id);
+      const managerIds = crmUser.managerId ? [crmUser.managerId] : [];
+      return Array.from(new Set([crmUser.id, ...managerIds, ...teamSales]));
+    }
+
+    return [crmUser.id];
+  }, [crmUser, users]);
+
+  const visibleProducts = useMemo(() => {
+    if (!allowedProductCreators) return products;
+    return products.filter((product) => allowedProductCreators.includes(product.createdBy));
+  }, [allowedProductCreators, products]);
 
   const handleUnitKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -98,12 +126,21 @@ const ItemsPage = () => {
   useEffect(() => {
     if (!crmUser) return;
     setLoading(true);
-    const unsubscribe = subscribeToProducts(crmUser.id, crmUser.role, crmUser.department, (data) => {
+
+    const unsubscribeProducts = subscribeToProducts(crmUser.id, crmUser.role, crmUser.department, (data) => {
       setProducts(data);
       setLoading(false);
     });
+
+    const unsubscribeUsers = subscribeToAllUsers((allUsers) => {
+      setUsers(allUsers);
+    });
+
     loadUnits();
-    return unsubscribe;
+    return () => {
+      unsubscribeProducts();
+      unsubscribeUsers();
+    };
   }, [crmUser]);
 
   const handleNameChange = (val: string) => {
@@ -111,13 +148,13 @@ const ItemsPage = () => {
     if (editingProduct) return;
     if (val.trim()) {
       const query = val.toLowerCase().trim();
-      const matches = products.filter((p) =>
+      const matches = visibleProducts.filter((p) =>
         p.name.toLowerCase().includes(query)
       );
       setSuggestions(matches);
 
       // Check for exact match
-      const exact = products.find(
+      const exact = visibleProducts.find(
         (p) => p.name.toLowerCase().trim() === query
       );
       if (exact) {
@@ -287,11 +324,10 @@ const ItemsPage = () => {
 
   return (
     <div className="page-container space-y-6">
-      <div className="dashboard-hero p-5 md:p-6">
-        <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="section-title">Items</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage your product catalog · {products.filter(p => !p.disabled).length} active</p>
+            <p className="text-sm text-muted-foreground mt-1">Manage your product catalog · {visibleProducts.filter(p => !p.disabled).length} active</p>
           </div>
         <Dialog open={open} onOpenChange={(val) => {
           setOpen(val);
@@ -627,18 +663,17 @@ const ItemsPage = () => {
             </form>
           </DialogContent>
         </Dialog>
-        </div>
       </div>
 
       <div className="dashboard-panel">
-        {products.length === 0 ? (
+        {visibleProducts.length === 0 ? (
           <div className="text-center py-16 rounded-xl border border-dashed border-border bg-card/50">
             <p className="text-muted-foreground font-medium">No items in your catalog yet.</p>
             <p className="text-xs text-muted-foreground mt-1">Click "Add Item" above to create your first item.</p>
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {products.map((product, idx) => {
+            {visibleProducts.map((product, idx) => {
               const isProductDisabled = !!product.disabled;
               return (
                 <div

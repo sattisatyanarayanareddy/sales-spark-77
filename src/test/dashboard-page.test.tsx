@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import DashboardPage from "@/pages/DashboardPage";
 import * as firestoreService from "@/lib/firestore-service";
 
@@ -26,6 +27,10 @@ vi.mock("@/lib/firestore-service", () => ({
   subscribeToAllUsers: (...args: unknown[]) => mockSubscribeToAllUsers(...args),
   subscribeToSalesFunnel: (...args: unknown[]) => mockSubscribeToSalesFunnel(...args),
   subscribeToNotifications: (...args: unknown[]) => mockSubscribeToNotifications(...args),
+  subscribeToQuotations: vi.fn().mockImplementation((_a, _b, callback) => {
+    callback([]);
+    return () => {};
+  }),
   approveQuotationDoc: vi.fn(),
   rejectQuotationDoc: (...args: unknown[]) => mockRejectQuotationDoc(...args),
 }));
@@ -68,7 +73,11 @@ describe("DashboardPage manager rejection flow", () => {
   });
 
   it("shows a rejection remarks field and passes the remarks when rejecting", async () => {
-    render(<DashboardPage />);
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Quotations Pending Your Approval")).toBeInTheDocument();

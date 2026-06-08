@@ -36,6 +36,7 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [crmUser, setCrmUser] = useState<CRMUser | null>(null);
+  const [networkError, setNetworkError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,13 +50,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (user) {
         try {
           console.log("🔍 Auth user detected:", user.uid, user.email);
+          setNetworkError(null);
           const userData = await fetchUserDoc(user.uid);
           console.log("✅ Firestore user data:", userData);
           setCrmUser(userData);
         } catch (e: any) {
           console.error("❌ Error fetching user doc:", e);
-          toast.error(e?.message || "Failed to load your profile. Please refresh and try again.");
-          setCrmUser(null);
+          // If error indicates offline/unavailable, show a full-page network error
+          const code = (e && (e.code || e.code === 0) && e.code) || (e && e.message) || null;
+          const isOffline = typeof code === "string" && (code === "unavailable" || code.toLowerCase().includes("offline") || code.toLowerCase().includes("internet"));
+          if (isOffline) {
+            setNetworkError(new Error("Unable to reach Firestore backend. Please check your internet connection."));
+          } else {
+            toast.error(e?.message || "Failed to load your profile. Please refresh and try again.");
+            setCrmUser(null);
+          }
         }
       } else {
         console.log("❌ No auth user");
@@ -164,6 +173,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedAt: new Date().toISOString(),
     });
   };
+
+  if (networkError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="max-w-2xl w-full text-center space-y-4">
+          <h1 className="text-3xl font-bold">Opps!!!</h1>
+          <p className="text-lg text-muted-foreground">{networkError.message}</p>
+          <div className="pt-4">
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow-sm"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AuthContext.Provider value={{ firebaseUser, crmUser, setCrmUser, loading, login, resetPassword, logout, createUser, completeProfile }}>
