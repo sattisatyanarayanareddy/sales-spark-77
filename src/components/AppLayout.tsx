@@ -93,7 +93,7 @@ const AppLayout: React.FC = () => {
                 exit={{ opacity: 0, x: -10 }}
                 className="font-display font-bold text-lg text-white truncate"
               >
-                SalesERP
+                SalesCRM
               </motion.span>
             )}
           </div>
